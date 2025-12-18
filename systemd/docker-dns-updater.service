@@ -1,0 +1,8 @@
+[Unit]
+Description=Update Docker DNS entries
+After=docker.service network-online.target
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/docker-dns-updater.sh
