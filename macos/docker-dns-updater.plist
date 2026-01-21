@@ -8,10 +8,16 @@
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/docker-dns-updater.sh</string>
+        <string>--force</string>
+        <string>--update-profile</string>
     </array>
     <key>StartInterval</key>
     <integer>600</integer>
     <key>RunAtLoad</key>
     <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/docker-dns-updater.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/docker-dns-updater.err</string>
 </dict>
 </plist>
