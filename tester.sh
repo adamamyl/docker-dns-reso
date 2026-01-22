@@ -111,17 +111,22 @@ nordvpn_app_running() {
 nordvpn_action() {
     local action=$1
 
-    if ! nordvpn_app_running; then
-        warn "NordVPN.app not running. Launching..."
-        open -a NordVPN
-        read -rp "Press Enter after NordVPN.app is running..."
-    fi
-
     if [[ "$action" == "start" ]]; then
-        log "NordVPN app appears running."
-    else
-        log "Disconnecting NordVPN..."
-        # GUI app disconnect requires manual interaction
+        if nordvpn_app_running; then
+            log "NordVPN.app already running."
+        else
+            log "Starting NordVPN.app..."
+            open -a NordVPN
+            read -rp "Press Enter after NordVPN.app has fully started..."
+        fi
+    elif [[ "$action" == "stop" ]]; then
+        if nordvpn_app_running; then
+            warn "Please manually quit NordVPN.app to continue."
+            read -rp "Press Enter after NordVPN.app has been closed..."
+            log "Confirmed NordVPN.app closed."
+        else
+            log "NordVPN.app not running."
+        fi
     fi
 }
 
