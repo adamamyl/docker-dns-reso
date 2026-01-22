@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1091,SC2155
 set -exuo pipefail
 
 # ========================================
@@ -49,12 +50,13 @@ check_service() {
 }
 
 ensure_dnsmasq_zone() {
-    local ip docker_ip
+    local docker_ip
     docker_ip=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$DOCKER_CONTAINER" 2>/dev/null || echo "$LOOPBACK_IP")
     if [[ ! -s "$DNSMASQ_CONF" ]]; then
         log "Populating dnsmasq zone file..."
         cat >"$DNSMASQ_CONF" <<EOF
 address=/$DOCKER_CONTAINER.internal/$docker_ip
+address=/.internal/$docker_ip
 EOF
         log "dnsmasq zone file configured for $DOCKER_CONTAINER.internal -> $docker_ip"
     fi
@@ -121,6 +123,7 @@ nordvpn_action() {
         fi
     elif [[ "$action" == "stop" ]]; then
         if nordvpn_app_running; then
+            log "Stopping NordVPN.app..."
             warn "Please manually quit NordVPN.app to continue."
             read -rp "Press Enter after NordVPN.app has been closed..."
             log "Confirmed NordVPN.app closed."
@@ -169,7 +172,7 @@ run_scenario() {
 
     # Tailscale resolution
     echo "--- Tailscale ---" | tee -a "$LOG_FILE"
-    TS_HOST=$(tailscale status --json | jq -r '.Peer[]?.HostName' 2>/dev/null | grep -v "^$(hostname)$" | shuf -n1 || true)
+    TS_HOST=$(tailscale status --json 2>/dev/null | jq -r '.Peer[]?.HostName' 2>/dev/null | grep -v "^$(hostname)$" | shuf -n1 || true)
     if [[ -n "$TS_HOST" ]]; then
         if ! ping -c 2 "$TS_HOST" 2>&1 | tee -a "$LOG_FILE"; then
             warn "Ping failed!"
@@ -195,8 +198,10 @@ check_service docker
 check_service tailscaled
 check_service dnsmasq
 
-if ! nordvpn_app_running; then
-    log "Please exit NordVPN manually if needed."
+if nordvpn_app_running; then
+    nordvpn_action stop
+else
+    log "NordVPN.app not running. Please ensure it's closed before starting the test."
 fi
 
 docker_run_test_container
