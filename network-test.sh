@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # network_test.sh
-# Modern Bash network testing script (dnsmasq + Docker)
+# Modern Bash network testing script (dnsmasq + Docker + Tailscale)
 # Modular, idempotent, verbose, dry-run, cross-platform aware
 
 set -euo pipefail
@@ -8,11 +8,18 @@ IFS=$'\n\t'
 
 # === Globals ===
 SCRIPT_NAME=$(basename "$0")
-LOG_DIR="./logs"
+
+# === Base directories ===
+BASEDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# --- Logs ---
+LOG_DIR="$BASEDIR/logs"
 mkdir -p "$LOG_DIR"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 LOG_FILE="$LOG_DIR/network_test.$TIMESTAMP.log"
 SYMLINK="$LOG_DIR/latest-net.log"
+
+# Default flags
 DRY_RUN=false
 VERBOSE=false
 FORCE=false
@@ -29,38 +36,6 @@ log() { local level="$1"; shift; local msg="$*"; echo -e "${level} [${SCRIPT_NAM
 info() { log "${EMOJI_INFO}[INFO]" "$@"; }
 warn() { log "${EMOJI_WARN}[WARN]" "$@"; }
 error() { log "${EMOJI_ERROR}[ERROR]" "$@"; }
-
-# === Flag parsing ===
-print_help() {
-    cat <<EOF
-Usage: $SCRIPT_NAME [options]
-Options:
-  --help        Show this help
-  --verbose     Enable verbose logging
-  --dry-run     Log actions without executing
-  --force       Skip interactive prompts
-  --module     Select module to run (all, dnsmasq, docker)
-EOF
-    exit 0
-}
-
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --help) print_help ;;
-        --verbose) VERBOSE=true ;;
-        --dry-run) DRY_RUN=true ;;
-        --force) FORCE=true ;;
-        --module)
-            shift
-            MODULE="${1:-all}"
-            ;;
-        *) error "Unknown argument: $1"; print_help ;;
-    esac
-    shift
-done
-
-info "Log file: $LOG_FILE"
-info "CLI flags: DRY_RUN=$DRY_RUN VERBOSE=$VERBOSE FORCE=$FORCE MODULE=$MODULE"
 
 # === Helpers ===
 run_cmd() {
@@ -95,17 +70,27 @@ snapshot_interfaces() {
     ifconfig >> "$LOG_FILE" || true
 }
 
-# === ps Module ===
-run_ps_module() {
-    echo "🟢[INFO] [network-test.sh] $(date +%H:%M:%S) Running process snapshot module"
+# === Symlink latest log ===
+update_symlink() {
+    ln -sf "$LOG_FILE" "$SYMLINK"
+    info "Updated symlink: $SYMLINK -> $LOG_FILE"
+}
 
+
+update_symlink
+
+# === Modules ===
+
+# --- ps Module ---
+run_ps_module() {
+    info "Running process snapshot module"
     ps -e -o pid,comm | grep -Ei "(tailscale|tailscaled|nordvpn|nordvpnd|dnsmasq|docker|dockerd)" \
         | tee -a "$LOG_FILE" || echo "No matching processes running" | tee -a "$LOG_FILE"
 
     echo "" | tee -a "$LOG_FILE"
 }
 
-# === dnsmasq Module ===
+# --- dnsmasq Module ---
 dnsmasq_stop() {
     if pgrep dnsmasq >/dev/null 2>&1; then
         info "Stopping dnsmasq"
@@ -127,7 +112,7 @@ EOF
     run_cmd "sudo dnsmasq -C $cfg"
 }
 
-run_dnsmasq_tests() {
+run_dnsmasq_module() {
     info "=== Network DNS Test (dnsmasq focus) ==="
 
     # Scenario 1: baseline without dnsmasq
@@ -145,7 +130,7 @@ run_dnsmasq_tests() {
     dnsmasq_stop
 }
 
-# === Docker Module ===
+# --- Docker Module ---
 docker_check() {
     if ! command -v docker >/dev/null 2>&1; then
         warn "Docker not installed, skipping Docker tests"
@@ -158,7 +143,7 @@ docker_check() {
     return 0
 }
 
-run_docker_tests() {
+run_docker_module() {
     if ! docker_check; then return; fi
 
     info "=== Docker Bridge Network Test ==="
@@ -174,8 +159,9 @@ run_docker_tests() {
     SUMMARY_RESULTS["docker-bridge"]="true|yes|ok|1"
 }
 
+# --- Tailscale Module ---
 run_tailscale_module() {
-    echo "🟢[INFO] [network-test.sh] $(date +%H:%M:%S) Running Tailscale module"
+    info "Running Tailscale module"
 
     # Check if Tailscale daemon is running
     if ! pgrep -x "tailscaled" >/dev/null; then
@@ -185,36 +171,61 @@ run_tailscale_module() {
 
     # Confirm tailscale CLI exists
     if ! command -v tailscale >/dev/null; then
-        echo "🔴[ERROR] 'tailscale' CLI not found. Install Tailscale first." | tee -a "$LOG_FILE"
+        error "'tailscale' CLI not found. Install Tailscale first."
         return
     fi
 
-    # Show Tailscale status
-    echo "🟢[INFO] Tailscale status:" | tee -a "$LOG_FILE"
-    tailscale status | tee -a "$LOG_FILE"
-
-    # Show Tailscale IPs
-    echo "🟢[INFO] Tailscale IPs:" | tee -a "$LOG_FILE"
-    TAILSCALE_IPS=$(tailscale ip -4)
-    tailscale ip -4 -6 | tee -a "$LOG_FILE"
-
-    # Determine utun interface dynamically by looking for 100.64/10
-    TUN_IF=$(netstat -nr | awk '/100\.64\./ {print $4; exit}')
-    if [ -z "$TUN_IF" ]; then
-        echo "🟡[WARN] Could not detect Tailscale utun interface." | tee -a "$LOG_FILE"
-    else
-        echo "🟢[INFO] Tailscale interface detected: $TUN_IF" | tee -a "$LOG_FILE"
-        
-        # Show routes through Tailscale interface
-        echo "🟢[INFO] Tailscale routes (dynamic):" | tee -a "$LOG_FILE"
-        netstat -nr | grep "$TUN_IF" | tee -a "$LOG_FILE"
+    if ! pgrep -x tailscaled >/dev/null; then
+        warn "Tailscale daemon not running."
+        if [[ "$FORCE" != "true" ]]; then
+            read -p "Please start Tailscale and log in if needed, then press [Enter] to continue..."
+        else
+            warn "Force mode: continuing despite tailscaled not running."
+        fi
     fi
 
-    # Show Tailscale DNS (if any)
-    echo "🟢[INFO] Tailscale DNS settings:" | tee -a "$LOG_FILE"
-    tailscale status --json | jq '.Self.DNS[]?' | tee -a "$LOG_FILE"
+    info "Tailscale status:"
+    tailscale status || warn "Failed to fetch tailscale status"
 
-    echo "" | tee -a "$LOG_FILE"
+    # Determine local Tailscale interface
+    TS_INTERFACE=""
+    TS_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "")
+    for iface in $(ifconfig -l); do
+        ips=$(ifconfig $iface | grep 'inet ' | awk '{print $2}')
+        for ip in $ips; do
+            if [[ $ip =~ ^100\.(6[0-3]|[6-9][0-9]|[1-9][0-9]?)\..* ]]; then
+                TS_INTERFACE=$iface
+                TS_IP=$ip
+                break 2
+            fi
+        done
+    done
+
+    if [[ -z "$TS_INTERFACE" ]]; then
+        warn "No active Tailscale interface found, using fallback IP: $TS_IP"
+        TS_INTERFACE="fallback"
+    else
+        info "Detected Tailscale interface: $TS_INTERFACE with IP $TS_IP"
+    fi
+
+    # Reachable devices
+    reachable_devices=$(tailscale status --json | jq -r '.Peer[] | select(.Online==true) | "\(.HostName) \(.TailscaleIPs[])"')
+    if [[ -z "$reachable_devices" ]]; then
+        warn "No online Tailscale nodes found, falling back to 'hendricks'"
+        reachable_devices="hendricks 100.74.101.85"
+    fi
+
+    echo "$reachable_devices" | while read -r host ip; do
+        [[ "$ip" == "$TS_IP" ]] && continue
+        if [[ "$DRY_RUN" == "true" ]]; then
+            info "[DRY-RUN] Would ping: $host ($ip)"
+        else
+            ping_output=$(tailscale ping -c 1 "$host" 2>&1)
+            [[ $? -eq 0 ]] && info "Ping successful: $host ($ip) - $ping_output" || warn "Ping failed: $host ($ip) - $ping_output"
+        fi
+    done
+
+    info "Tailscale module complete"
 }
 
 # === Summary Table ===
@@ -227,39 +238,56 @@ print_summary() {
     done | tee -a "$LOG_FILE"
 }
 
-# === Symlink latest log ===
-update_symlink() {
-    if [[ -L "$SYMLINK" || ! -e "$SYMLINK" ]]; then
-        ln -sf "$LOG_FILE" "$SYMLINK"
-        info "Updated symlink: $SYMLINK -> $LOG_FILE"
-    fi
+# === CLI Parser & Help ===
+print_help() {
+    cat <<EOF
+Usage: $0 [OPTIONS]
+
+Options:
+  --module <module>   Module to run (ps, dnsmasq, docker, tailscale, all). Default: all
+  --dry-run           Show what would run without executing
+  --verbose           Enable verbose logging
+  --force             Skip interactive prompts
+  --help, -h          Show this help message and exit
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --module) shift; MODULE="${1:-all}"; shift ;;
+        --dry-run) DRY_RUN=true; shift ;;
+        --verbose) VERBOSE=true; shift ;;
+        --force) FORCE=true; shift ;;
+        --help|-h) print_help; exit 0 ;;
+        *) echo "Unknown option: $1"; print_help; exit 1 ;;
+    esac
+done
+
+info "CLI flags: DRY_RUN=$DRY_RUN VERBOSE=$VERBOSE FORCE=$FORCE MODULE=$MODULE"
+
+# === Module Dispatcher ===
+run_module() {
+    case "$1" in
+        ps) run_ps_module ;;
+        dnsmasq) run_dnsmasq_module ;;
+        docker) run_docker_module ;;
+        tailscale) run_tailscale_module ;;
+        all)
+            run_ps_module
+            run_dnsmasq_module
+            run_docker_module
+            run_tailscale_module
+            ;;
+        *)
+            warn "Unknown module: $1"
+            exit 1
+            ;;
+    esac
 }
 
 # === Main Execution ===
 main() {
-    case "$MODULE" in
-        all)
-            run_ps_module
-            run_dnsmasq_tests
-            run_docker_tests
-            run_tailscale_module
-            ;;
-        dnsmasq)
-            run_dnsmasq_tests ;;
-        docker) 
-            run_docker_tests ;;
-        ps)
-            run_ps_module
-            ;;
-        tailscale)
-            run_tailscale_module
-            ;;
-        *)
-            error "Unknown module: $MODULE"
-            exit 1
-            ;;
-    esac
-
+    run_module "$MODULE"
     print_summary
     update_symlink
     info "Test complete"
