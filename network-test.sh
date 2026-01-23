@@ -163,36 +163,72 @@ run_docker_module() {
 run_tailscale_module() {
     info "Running Tailscale module"
 
-    # Check if Tailscale daemon is running
-    if ! pgrep -x "tailscaled" >/dev/null; then
-        echo "🟡[WARN] [network-test.sh] Tailscale daemon not running."
-        read -p "Please start Tailscale and log in if needed, then press [Enter] to continue..." _
+    # --- 1. Detect running Tailscale processes ---
+    TS_GUI_PID=$(pgrep -f 'Tailscale')
+    TS_DAEMON_PID=$(pgrep -f 'tailscaled')
+
+    if [[ -n "$TS_GUI_PID" ]]; then
+        info "Tailscale GUI detected (PID $TS_GUI_PID)"
     fi
 
-    # Confirm tailscale CLI exists
-    if ! command -v tailscale >/dev/null; then
-        error "'tailscale' CLI not found. Install Tailscale first."
-        return
+    # --- 2. Attempt to start tailscaled if not running ---
+    if [[ -z "$TS_DAEMON_PID" ]]; then
+        # Possible locations for tailscaled binary
+        for candidate in \
+            "$(command -v tailscaled 2>/dev/null)" \
+            "$HOME/go/bin/tailscaled"; do
+            if [[ -x "$candidate" ]]; then
+                TS_BIN="$candidate"
+                break
+            fi
+        done
+
+        if [[ -n "$TS_BIN" ]]; then
+            info "Tailscale daemon not running, attempting to start $TS_BIN"
+            sudo "$TS_BIN" &>/dev/null &
+            sleep 2
+            TS_DAEMON_PID=$(pgrep -f 'tailscaled')
+            if [[ -n "$TS_DAEMON_PID" ]]; then
+                info "Tailscaled started successfully (PID $TS_DAEMON_PID)"
+            else
+                warn "Failed to start tailscaled via $TS_BIN"
+            fi
+        else
+            warn "No tailscaled binary found in PATH or ~/go/bin"
+        fi
     fi
 
-    if ! pgrep -x tailscaled >/dev/null; then
-        warn "Tailscale daemon not running."
+    # --- 3. If no Tailscale processes are running ---
+    if [[ -z "$TS_GUI_PID" && -z "$TS_DAEMON_PID" ]]; then
         if [[ "$FORCE" != "true" ]]; then
             read -p "Please start Tailscale and log in if needed, then press [Enter] to continue..."
         else
             warn "Force mode: continuing despite tailscaled not running."
         fi
+        warn "No Tailscale processes detected. Please start Tailscale GUI or tailscaled."
+        return
     fi
 
-    info "Tailscale status:"
-    tailscale status || warn "Failed to fetch tailscale status"
+    # --- 4. Log Tailscale version for debugging ---
+    TS_VERSION=$(tailscale version 2>/dev/null || echo "unknown")
+    info "Tailscale version: $TS_VERSION"
 
-    # Determine local Tailscale interface
+    # --- 5. Show Tailscale status ---
+    if [[ -n "$TS_DAEMON_PID" ]]; then
+        TS_STATUS=$(tailscaled status --json 2>/dev/null || tailscale status)
+        info "Tailscale status:\n$TS_STATUS"
+    else
+        info "Tailscaled not running; limited info from GUI only"
+        tailscale status || warn "Failed to fetch tailscale status"
+    fi
+
+    # --- 6. Detect local Tailscale interface and IP ---
     TS_INTERFACE=""
     TS_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "")
     for iface in $(ifconfig -l); do
         ips=$(ifconfig $iface | grep 'inet ' | awk '{print $2}')
         for ip in $ips; do
+            # Detect Tailscale IP range 100.x.x.x
             if [[ $ip =~ ^100\.(6[0-3]|[6-9][0-9]|[1-9][0-9]?)\..* ]]; then
                 TS_INTERFACE=$iface
                 TS_IP=$ip
@@ -208,13 +244,14 @@ run_tailscale_module() {
         info "Detected Tailscale interface: $TS_INTERFACE with IP $TS_IP"
     fi
 
-    # Reachable devices
-    reachable_devices=$(tailscale status --json | jq -r '.Peer[] | select(.Online==true) | "\(.HostName) \(.TailscaleIPs[])"')
+    # --- 7. Fetch reachable Tailscale devices ---
+    reachable_devices=$(tailscale status --json 2>/dev/null | jq -r '.Peer[] | select(.Online==true) | "\(.HostName) \(.TailscaleIPs[])"')
     if [[ -z "$reachable_devices" ]]; then
         warn "No online Tailscale nodes found, falling back to 'hendricks'"
         reachable_devices="hendricks 100.74.101.85"
     fi
 
+    # --- 8. Ping reachable devices ---
     echo "$reachable_devices" | while read -r host ip; do
         [[ "$ip" == "$TS_IP" ]] && continue
         if [[ "$DRY_RUN" == "true" ]]; then
