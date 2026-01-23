@@ -24,6 +24,13 @@ DNSMASQ_PORT="53"
 BREW_PREFIX=""
 DNSMASQ_BIN=""
 
+# Summary storage
+SUMMARY_SCENARIOS=()
+SUMMARY_DNSMASQ_INTENT=()
+SUMMARY_DNSMASQ_RUNNING=()
+SUMMARY_DIG_RESULT=()
+SUMMARY_RESOLVER_COUNT=()
+
 #######################################
 # Logging helpers
 #######################################
@@ -120,7 +127,6 @@ detect_dnsmasq() {
 init_logging() {
   mkdir -p "$LOG_DIR"
   LOG_FILE="$LOG_DIR/network_test.$TIMESTAMP.log"
-
   : >"$LOG_FILE"
 
   if [[ -L "$SYMLINK_NAME" || -e "$SYMLINK_NAME" ]]; then
@@ -188,11 +194,6 @@ dnsmasq_start() {
 
   sudo "$DNSMASQ_BIN" --conf-file="$(dnsmasq_conf_file)" --keep-in-foreground &
   sleep 2
-
-  if ! dnsmasq_running; then
-    log_error "dnsmasq failed to start"
-    exit 1
-  fi
 }
 
 dnsmasq_stop() {
@@ -212,10 +213,7 @@ dnsmasq_stop() {
 }
 
 dnsmasq_write_conf() {
-  local conf
-  conf="$(dnsmasq_conf_file)"
-
-  log_info "Writing dnsmasq config: $conf"
+  log_info "Writing dnsmasq config"
 
   if [[ "$DRY_RUN" == "true" ]]; then
     log_info "[dry-run] Would write dnsmasq config"
@@ -223,7 +221,7 @@ dnsmasq_write_conf() {
   fi
 
   sudo mkdir -p "$(dnsmasq_conf_dir)"
-  sudo tee "$conf" >/dev/null <<EOF
+  sudo tee "$(dnsmasq_conf_file)" >/dev/null <<EOF
 port=$DNSMASQ_PORT
 listen-address=$DNSMASQ_IP
 bind-interfaces
@@ -231,9 +229,19 @@ domain=$DNSMASQ_DOMAIN
 EOF
 }
 
-dnsmasq_test_host() {
-  log_info "Host DNS test via dnsmasq"
-  dig @"$DNSMASQ_IP" localhost >>"$LOG_FILE" 2>&1 || true
+#######################################
+# Test helpers
+#######################################
+count_resolvers() {
+  scutil --dns | grep -c '^resolver'
+}
+
+dnsmasq_test_dig() {
+  if dig @"$DNSMASQ_IP" localhost >/dev/null 2>&1; then
+    echo "ok"
+  else
+    echo "fail"
+  fi
 }
 
 #######################################
@@ -257,11 +265,44 @@ run_scenario() {
   fi
 
   snapshot_dns "after-$name"
-  dnsmasq_test_host
+
+  # Collect summary data
+  SUMMARY_SCENARIOS+=("$name")
+  SUMMARY_DNSMASQ_INTENT+=("$dnsmasq_enabled")
+
+  if dnsmasq_running; then
+    SUMMARY_DNSMASQ_RUNNING+=("yes")
+  else
+    SUMMARY_DNSMASQ_RUNNING+=("no")
+  fi
+
+  SUMMARY_DIG_RESULT+=("$(dnsmasq_test_dig)")
+  SUMMARY_RESOLVER_COUNT+=("$(count_resolvers)")
 
   if [[ "$dnsmasq_enabled" == "true" ]]; then
     dnsmasq_stop
   fi
+}
+
+#######################################
+# Summary
+#######################################
+print_summary() {
+  log_info "=== Summary ==="
+  printf "\n%-22s %-10s %-16s %-10s %-15s\n" \
+    "Scenario" "dnsmasq" "running" "dig" "resolvers" \
+    | tee -a "$LOG_FILE"
+
+  local i
+  for ((i=0; i<${#SUMMARY_SCENARIOS[@]}; i++)); do
+    printf "%-22s %-10s %-16s %-10s %-15s\n" \
+      "${SUMMARY_SCENARIOS[$i]}" \
+      "${SUMMARY_DNSMASQ_INTENT[$i]}" \
+      "${SUMMARY_DNSMASQ_RUNNING[$i]}" \
+      "${SUMMARY_DIG_RESULT[$i]}" \
+      "${SUMMARY_RESOLVER_COUNT[$i]}" \
+      | tee -a "$LOG_FILE"
+  done
 }
 
 #######################################
@@ -285,6 +326,7 @@ main() {
   run_scenario "baseline-no-dnsmasq" "false"
   run_scenario "with-dnsmasq" "true"
 
+  print_summary
   log_info "Test complete"
 }
 
