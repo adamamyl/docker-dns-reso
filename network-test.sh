@@ -95,6 +95,16 @@ snapshot_interfaces() {
     ifconfig >> "$LOG_FILE" || true
 }
 
+# === ps Module ===
+run_ps_module() {
+    echo "🟢[INFO] [network-test.sh] $(date +%H:%M:%S) Running process snapshot module"
+
+    ps -e -o pid,comm | grep -Ei "(tailscale|tailscaled|nordvpn|nordvpnd|dnsmasq|docker|dockerd)" \
+        | tee -a "$LOG_FILE" || echo "No matching processes running" | tee -a "$LOG_FILE"
+
+    echo "" | tee -a "$LOG_FILE"
+}
+
 # === dnsmasq Module ===
 dnsmasq_stop() {
     if pgrep dnsmasq >/dev/null 2>&1; then
