@@ -174,6 +174,49 @@ run_docker_tests() {
     SUMMARY_RESULTS["docker-bridge"]="true|yes|ok|1"
 }
 
+run_tailscale_module() {
+    echo "🟢[INFO] [network-test.sh] $(date +%H:%M:%S) Running Tailscale module"
+
+    # Check if Tailscale daemon is running
+    if ! pgrep -x "tailscaled" >/dev/null; then
+        echo "🟡[WARN] [network-test.sh] Tailscale daemon not running."
+        read -p "Please start Tailscale and log in if needed, then press [Enter] to continue..." _
+    fi
+
+    # Confirm tailscale CLI exists
+    if ! command -v tailscale >/dev/null; then
+        echo "🔴[ERROR] 'tailscale' CLI not found. Install Tailscale first." | tee -a "$LOG_FILE"
+        return
+    fi
+
+    # Show Tailscale status
+    echo "🟢[INFO] Tailscale status:" | tee -a "$LOG_FILE"
+    tailscale status | tee -a "$LOG_FILE"
+
+    # Show Tailscale IPs
+    echo "🟢[INFO] Tailscale IPs:" | tee -a "$LOG_FILE"
+    TAILSCALE_IPS=$(tailscale ip -4)
+    tailscale ip -4 -6 | tee -a "$LOG_FILE"
+
+    # Determine utun interface dynamically by looking for 100.64/10
+    TUN_IF=$(netstat -nr | awk '/100\.64\./ {print $4; exit}')
+    if [ -z "$TUN_IF" ]; then
+        echo "🟡[WARN] Could not detect Tailscale utun interface." | tee -a "$LOG_FILE"
+    else
+        echo "🟢[INFO] Tailscale interface detected: $TUN_IF" | tee -a "$LOG_FILE"
+        
+        # Show routes through Tailscale interface
+        echo "🟢[INFO] Tailscale routes (dynamic):" | tee -a "$LOG_FILE"
+        netstat -nr | grep "$TUN_IF" | tee -a "$LOG_FILE"
+    fi
+
+    # Show Tailscale DNS (if any)
+    echo "🟢[INFO] Tailscale DNS settings:" | tee -a "$LOG_FILE"
+    tailscale status --json | jq '.Self.DNS[]?' | tee -a "$LOG_FILE"
+
+    echo "" | tee -a "$LOG_FILE"
+}
+
 # === Summary Table ===
 print_summary() {
     info "=== Summary ==="
@@ -196,11 +239,21 @@ update_symlink() {
 main() {
     case "$MODULE" in
         all)
+            run_ps_module
             run_dnsmasq_tests
             run_docker_tests
+            run_tailscale_module
             ;;
-        dnsmasq) run_dnsmasq_tests ;;
-        docker) run_docker_tests ;;
+        dnsmasq)
+            run_dnsmasq_tests ;;
+        docker) 
+            run_docker_tests ;;
+        ps)
+            run_ps_module
+            ;;
+        tailscale)
+            run_tailscale_module
+            ;;
         *)
             error "Unknown module: $MODULE"
             exit 1
