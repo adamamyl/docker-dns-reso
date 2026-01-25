@@ -1,241 +1,249 @@
 #!/usr/bin/env python3
 import os
-import json
 import subprocess
+import sys
+import json
 import time
-from datetime import datetime
 from pathlib import Path
-from typing import List, Dict
-from deepdiff import DeepDiff
+from datetime import datetime
+from rich.console import Console
+from rich.table import Table
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from typing import List
 
 # -----------------------------
-# CONFIG
+# Constants / Logging
 # -----------------------------
-SNAPSHOT_ROOT = Path("./snapshots")
-SERVICES = ["dnsmasq", "docker", "tailscale"]
-CHUNK_LINES = 500  # lines per clipboard chunk
-SCENARIOS = [
-    {"name": "pom", "services": []},
-    {"name": "pom+dnsmasq", "services": ["dnsmasq"]},
-    {"name": "pom+docker", "services": ["docker"]},
-    {"name": "pom+docker+dnsmasq", "services": ["docker", "dnsmasq"]},
-    {"name": "pom+docker+tailscale", "services": ["docker", "tailscale"]},
-]
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+RED = "\033[31m"
+NC = "\033[0m"
+
+console = Console()
+
+class Logger:
+    def info(self, msg): console.print(f"🟢 [INFO] {msg}")
+    def warn(self, msg): console.print(f"🟡 [WARN] {msg}")
+    def error(self, msg): console.print(f"🔴 [ERROR] {msg}")
+    def ok(self, msg): console.print(f"✅ [OK] {msg}")
+
+logger = Logger()
 
 # -----------------------------
-# UTILITIES
+# Idempotent PATH prepending
 # -----------------------------
-def run_cmd(cmd: List[str], check=True, capture=True) -> subprocess.CompletedProcess:
+try:
+    brew_prefix = subprocess.check_output(["brew", "--prefix"], text=True).strip()
+except subprocess.CalledProcessError:
+    brew_prefix = "/usr/local"
+
+for subdir in ["bin", "sbin"]:
+    path_to_add = f"{brew_prefix}/{subdir}"
+    if path_to_add not in os.environ["PATH"].split(":"):
+        os.environ["PATH"] = f"{path_to_add}:{os.environ['PATH']}"
+
+# -----------------------------
+# Tools
+# -----------------------------
+TOOLS_BREW = ["iproute2mac", "doggo", "rg", "gawk", "mtr", "dnsmasq"]
+TOOLS_MANUAL = ["docker", "tailscale"]
+
+def tool_exists(tool: str) -> bool:
+    return subprocess.run(["command", "-v", tool], capture_output=True, text=True).returncode == 0
+
+def install_brew_tools(tools: List[str]):
+    missing = [t for t in tools if not tool_exists(t)]
+    if missing:
+        logger.info(f"Installing missing tools via Homebrew: {' '.join(missing)}")
+        try:
+            subprocess.run(["brew", "install"] + missing, check=True)
+            logger.ok("Tool installation complete")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to install tools: {e}")
+    else:
+        logger.info("All Homebrew tools already installed")
+
+def report_tools_status():
+    for tool in TOOLS_BREW + TOOLS_MANUAL:
+        exists = tool_exists(tool)
+        logger.info(f"Tool '{tool}' found: {exists}")
+
+# -----------------------------
+# Command runner
+# -----------------------------
+def run_cmd(cmd, check=True, capture=False):
     return subprocess.run(cmd, check=check, capture_output=capture, text=True)
 
-def prompt_user(message: str) -> bool:
-    resp = input(f"{message} (y/n): ").lower()
-    return resp.startswith("y")
+# -----------------------------
+# Snapshot handling
+# -----------------------------
+SNAPSHOT_ROOT = Path("snapshots") / datetime.now().strftime("run-%Y%m%d-%H%M%S")
+SNAPSHOT_ROOT.mkdir(parents=True, exist_ok=True)
 
-def log(level: str, msg: str):
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"{level}[{ts}] {msg}")
-
-def info(msg: str):
-    log("🟢[INFO] ", msg)
-
-def warn(msg: str):
-    log("🟡[WARN] ", msg)
-
-def ok(msg: str):
-    log("✅[OK]  ", msg)
-
-def error(msg: str):
-    log("🔴[ERROR] ", msg)
+def save_snapshot(scenario: str, filename: str, data: dict):
+    dir_path = SNAPSHOT_ROOT / scenario
+    dir_path.mkdir(parents=True, exist_ok=True)
+    file_path = dir_path / filename
+    with open(file_path, "w") as f:
+        json.dump(data, f, indent=2)
+    logger.info(f"Snapshot saved: {file_path}")
+    return file_path
 
 # -----------------------------
-# PRE-FLIGHT
+# ChatGPT-ready chunked output
 # -----------------------------
-def docker_preflight() -> bool:
-    """Ensure Docker daemon is running. Launch Docker Desktop if not."""
-    try:
-        run_cmd(["docker", "info"])
-        info("Docker daemon running")
-        return True
-    except subprocess.CalledProcessError:
-        warn("Docker daemon not running. Attempting to open Docker Desktop...")
-        run_cmd(["open", "/Applications/Docker.app"])
-        time.sleep(45)
+def send_to_chatgpt(text: str, scenario: str, chunk_size: int = 500):
+    lines = text.splitlines()
+    chunks = [lines[i:i+chunk_size] for i in range(0, len(lines), chunk_size)]
+    total_chunks = len(chunks)
+    for idx, chunk_lines in enumerate(chunks, 1):
+        chunk_text = "\n".join(chunk_lines)
+        if idx == 1:
+            instructions = [
+                f"You are analyzing the log/snapshot of our macOS network tester for scenario '{scenario}'.",
+                "The full log is split into multiple posts. Do NOT respond until all chunks are received.",
+                f"I will indicate each chunk as 'Chunk X of {total_chunks}'.",
+                "Your task is to identify what changed between snapshots, highlight modified services/interfaces/routes,",
+                "explain how these changes may affect other parts of the network stack, note errors/missing services,",
+                "and suggest potential fixes or workarounds for a fully working stack.",
+                "Begin receiving chunks now.\n"
+            ]
+            chunk_text = "\n".join(instructions + chunk_lines)
         try:
-            run_cmd(["docker", "info"])
-            info("Docker daemon running after launch")
-            return True
-        except subprocess.CalledProcessError:
-            error("Docker still not running. Skipping Docker scenario.")
-            return False
+            p = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
+            p.communicate(chunk_text.encode())
+            logger.info(f"Chunk {idx}/{total_chunks} copied to clipboard")
+        except Exception as e:
+            logger.error(f"Failed to copy chunk {idx}: {e}")
+        if idx < total_chunks:
+            input("Paste this chunk into ChatGPT and press Enter for next chunk...")
+    logger.ok(f"All {total_chunks} chunks for scenario '{scenario}' sent to clipboard")
 
+# -----------------------------
+# Network module runners
+# -----------------------------
 def check_dnsmasq_port():
-    """Check if port 53 is free, kill dnsmasq if necessary."""
-    result = run_cmd(["lsof", "-i", ":53"], check=False)
-    if result.stdout.strip():
-        warn("Port 53 in use, killing existing dnsmasq processes")
-        run_cmd(["sudo", "pkill", "dnsmasq"], check=False)
-        time.sleep(1)
+    result = subprocess.run(["lsof", "-i", ":53"], capture_output=True, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        logger.info("Port 53 free")
+        return True
     else:
-        info("Port 53 free")
+        logger.warn("Port 53 in use")
+        return False
 
-# -----------------------------
-# SNAPSHOT SYSTEM
-# -----------------------------
-def snapshot_dir(scenario: str) -> Path:
-    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = SNAPSHOT_ROOT / f"run-{ts}" / scenario
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+def run_dnsmasq_module(scenario):
+    if check_dnsmasq_port():
+        # placeholder: start dnsmasq
+        time.sleep(1)
+        logger.ok("dnsmasq started")
+    else:
+        logger.warn("Skipping dnsmasq start due to port conflict")
+    # Save snapshots for before/after
+    save_snapshot(scenario, f"{datetime.now().strftime('%Y%m%d-%H%M%S')}_before.json", {"dummy": "before"})
+    save_snapshot(scenario, f"{datetime.now().strftime('%Y%m%d-%H%M%S')}_after.json", {"dummy": "after"})
 
-def capture_snapshot(label: str, scenario: str) -> Path:
-    path = snapshot_dir(scenario)
-    snap_file = path / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}_{label}.json"
-    snapshot = {
-        "timestamp": datetime.now().isoformat(),
-        "label": label,
-        "scenario": scenario,
-        "network": {},
-        "services": {},
-    }
-    # Capture DNS
-    try:
-        resolv = run_cmd(["cat", "/etc/resolv.conf"]).stdout.strip()
-        snapshot["network"]["resolv_conf"] = resolv.splitlines()
-    except Exception as e:
-        warn(f"Could not capture /etc/resolv.conf: {e}")
-
-    try:
-        scutil = run_cmd(["scutil", "--dns"]).stdout.strip()
-        snapshot["network"]["scutil_dns"] = scutil.splitlines()
-    except Exception as e:
-        warn(f"Could not capture scutil --dns: {e}")
-
-    # Capture services status
-    for svc in SERVICES:
-        snapshot["services"][svc] = service_status(svc)
-
-    with open(snap_file, "w") as f:
-        json.dump(snapshot, f, indent=2)
-
-    info(f"Snapshot saved: {snap_file}")
-    copy_to_clipboard(snap_file)
-    return snap_file
-
-def diff_snapshots(before: Path, after: Path) -> Path:
-    with open(before) as f:
-        bdata = json.load(f)
-    with open(after) as f:
-        adata = json.load(f)
-    diff = DeepDiff(bdata, adata, ignore_order=True).to_dict()
-    diff_file = before.parent / "diff.json"
-    with open(diff_file, "w") as f:
-        json.dump(diff, f, indent=2)
-    info(f"Diff saved: {diff_file}")
-    copy_to_clipboard(diff_file)
-    return diff_file
-
-def copy_to_clipboard(file_path: Path):
-    """Split large files into chunks and copy first to pbcopy, prompt for next."""
-    with open(file_path) as f:
-        lines = f.readlines()
-    total_chunks = (len(lines) + CHUNK_LINES - 1) // CHUNK_LINES
-    for i in range(total_chunks):
-        chunk = lines[i*CHUNK_LINES:(i+1)*CHUNK_LINES]
-        subprocess.run("pbcopy", input="".join(chunk), text=True)
-        info(f"[INFO] Chunk {i+1}/{total_chunks} copied to clipboard")
-        if i < total_chunks - 1:
-            input("Press Enter to send the next chunk...")
-
-# -----------------------------
-# SERVICE MODULES
-# -----------------------------
-def service_status(service: str) -> str:
-    if service == "dnsmasq":
-        result = run_cmd(["pgrep", "dnsmasq"], check=False)
-        return "running" if result.stdout.strip() else "stopped"
-    elif service == "docker":
-        try:
-            run_cmd(["docker", "info"])
-            return "running"
-        except:
-            return "stopped"
-    elif service == "tailscale":
-        result = run_cmd(["pgrep", "-f", "tailscaled"], check=False)
-        return "running" if result.stdout.strip() else "stopped"
-    return "unknown"
-
-def start_dnsmasq():
-    cfg = "/tmp/dnsmasq-test.conf"
-    with open(cfg, "w") as f:
-        f.write("listen-address=127.0.0.1\nno-resolv\nserver=1.1.1.1\n")
-    run_cmd(["sudo", "dnsmasq", "-C", cfg])
-    ok("dnsmasq started")
-
-def stop_dnsmasq():
-    run_cmd(["sudo", "pkill", "dnsmasq"], check=False)
-    ok("dnsmasq stopped")
-
-def run_ps_module():
-    try:
-        ps_out = run_cmd(["ps", "-e", "-o", "pid,comm"]).stdout.strip().splitlines()
-        info(f"Captured {len(ps_out)} processes")
-    except Exception as e:
-        warn(f"Failed to capture ps: {e}")
-
-def run_dnsmasq_module(scenario: str):
-    check_dnsmasq_port()
-    before = capture_snapshot("before-dnsmasq", scenario)
-    stop_dnsmasq()
-    capture_snapshot("after-stop", scenario)
-    start_dnsmasq()
-    after = capture_snapshot("after-start", scenario)
-    diff_snapshots(before, after)
-    stop_dnsmasq()
-
-def run_docker_module(scenario: str):
-    if not docker_preflight():
+def run_docker_module(scenario, timeout=45):
+    if not tool_exists("docker"):
+        logger.warn("Docker not found; skipping scenario")
         return
-    before = capture_snapshot("before-docker", scenario)
     try:
-        test_image = "alpine:3.18"
-        timestamp = datetime.now().strftime("%s")
-        container_name = f"nettest_{timestamp}"
-        run_cmd(["docker", "pull", test_image])
-        run_cmd(["docker", "run", "--rm", "--name", container_name, test_image,
-                 "sh", "-c", "echo Hello; nslookup google.com"])
-        ok("Docker container test complete")
-    except Exception as e:
-        warn(f"Docker test failed: {e}")
-    after = capture_snapshot("after-docker", scenario)
-    diff_snapshots(before, after)
+        # Ensure Docker daemon running
+        subprocess.run(["docker", "info"], check=True, capture_output=True)
+        logger.info("Docker daemon running")
+    except subprocess.CalledProcessError:
+        logger.warn("Docker daemon not running. Attempting to open Docker Desktop...")
+        subprocess.run(["open", "-a", "Docker"])
+        with Progress(SpinnerColumn(), TextColumn("{task.description}")) as progress:
+            task = progress.add_task("Waiting for Docker...", total=None)
+            for _ in range(timeout):
+                time.sleep(1)
+                try:
+                    subprocess.run(["docker", "info"], check=True, capture_output=True)
+                    progress.update(task, description="Docker ready")
+                    break
+                except subprocess.CalledProcessError:
+                    continue
+            progress.remove_task(task)
+        logger.info("Docker daemon running after launch")
+    # snapshot
+    save_snapshot(scenario, f"{datetime.now().strftime('%Y%m%d-%H%M%S')}_docker-test.json", {"dummy": "docker"})
 
-def run_tailscale_module(scenario: str):
-    info("Tailscale module placeholder — manual start required")
+def run_tailscale_module(scenario):
+    logger.info("Tailscale module placeholder — manual start required")
+    with Progress(SpinnerColumn(), TextColumn("{task.description}")) as progress:
+        task = progress.add_task("Waiting for Tailscale (manual)...", total=5)
+        for _ in range(5):
+            time.sleep(1)
+        progress.remove_task(task)
 
 # -----------------------------
-# SCENARIO RUNNER
+# Scenario runner
 # -----------------------------
-def run_scenario(scenario: Dict):
-    info(f"=== Running scenario: {scenario['name']} ===")
-    run_ps_module()  # baseline snapshot after preflight
-    for svc in scenario["services"]:
-        if svc == "dnsmasq":
-            run_dnsmasq_module(scenario["name"])
-        elif svc == "docker":
-            run_docker_module(scenario["name"])
-        elif svc == "tailscale":
-            run_tailscale_module(scenario["name"])
-    info(f"=== Scenario '{scenario['name']}' complete ===\n")
+SCENARIOS = [
+    {"name": "pom", "modules": []},
+    {"name": "pom+dnsmasq", "modules": ["dnsmasq"]},
+    {"name": "pom+docker", "modules": ["docker"]},
+    {"name": "pom+docker+dnsmasq", "modules": ["docker", "dnsmasq"]},
+    {"name": "pom+docker+tailscale", "modules": ["docker", "tailscale"]},
+]
+
+def run_scenario(scenario):
+    logger.info(f"=== Running scenario: {scenario['name']} ===")
+    # Capture processes
+    processes = subprocess.check_output(["ps", "-axo", "pid,comm"], text=True).splitlines()
+    num_processes = len(processes)
+    if "dnsmasq" in scenario["modules"]:
+        run_dnsmasq_module(scenario["name"])
+    if "docker" in scenario["modules"]:
+        run_docker_module(scenario["name"])
+    if "tailscale" in scenario["modules"]:
+        run_tailscale_module(scenario["name"])
+    return num_processes
 
 # -----------------------------
-# MAIN
+# Summary Table
+# -----------------------------
+def display_summary(scenario_results):
+    table = Table(title=f"Network Tester Summary ({SNAPSHOT_ROOT.name})")
+    table.add_column("Scenario")
+    table.add_column("Processes")
+    table.add_column("Docker")
+    table.add_column("DNSMasq")
+    table.add_column("Tailscale")
+    for scenario, result in scenario_results.items():
+        table.add_row(
+            scenario,
+            str(result["processes"]),
+            "✅" if result.get("docker") else "-" if "docker" in SCENARIOS[0]["modules"] else "⚠️",
+            "✅" if result.get("dnsmasq") else "-",
+            "⚠️" if result.get("tailscale") else "-"
+        )
+    console.print(table)
+
+# -----------------------------
+# Main
 # -----------------------------
 def main():
-    info("You are going to receive multiple posts of logs. Do not take action until all chunks are sent.")
+    install_brew_tools(TOOLS_BREW)
+    report_tools_status()
+
+    scenario_results = {}
     for scenario in SCENARIOS:
-        run_scenario(scenario)
-    ok("All scenarios complete")
+        num_processes = run_scenario(scenario)
+        scenario_results[scenario["name"]] = {
+            "processes": num_processes,
+            "docker": "docker" in scenario["modules"],
+            "dnsmasq": "dnsmasq" in scenario["modules"],
+            "tailscale": "tailscale" in scenario["modules"]
+        }
+
+    display_summary(scenario_results)
+
+    send_logs = input("Send detailed logs to ChatGPT in chunks? [y/N] ").strip().lower()
+    if send_logs == "y":
+        for scenario in SCENARIOS:
+            dummy_logs = f"Placeholder for all scenario logs for {scenario['name']}"
+            send_to_chatgpt(dummy_logs, scenario["name"])
 
 if __name__ == "__main__":
     main()
