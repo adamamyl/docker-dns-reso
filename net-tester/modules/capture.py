@@ -11,7 +11,9 @@ Capture network and system state on macOS for net-tester.
 import json
 import subprocess
 from pathlib import Path
-from .utils import run_cmd, command_path, get_brew_prefix
+
+import modules.logger as logmod
+from modules.install_utils import command_path, get_brew_prefix, run_cmd
 
 def capture_processes() -> str:
     """
@@ -19,7 +21,9 @@ def capture_processes() -> str:
     Each line is a JSON object describing a single process.
     """
     try:
-        output = run_cmd(["ps", "-axo", "pid,ppid,uid,gid,comm"]).stdout.strip().splitlines()
+        output = (
+            run_cmd(["ps", "-axo", "pid,ppid,uid,gid,comm"]).stdout.strip().splitlines()
+        )
     except Exception:
         return ""
 
@@ -37,7 +41,7 @@ def capture_processes() -> str:
             "uid": int(uid),
             "gid": int(gid),
             "comm": comm,
-            "is_root": int(uid) == 0
+            "is_root": int(uid) == 0,
         }
         ndjson_lines.append(json.dumps(proc_dict))
     return "\n".join(ndjson_lines)
@@ -62,9 +66,13 @@ def capture_dns_summary() -> dict:
             dns_summary[current_iface] = {}
         elif current_iface:
             if line.startswith("nameserver["):
-                dns_summary[current_iface].setdefault("nameservers", []).append(line.split(":")[1].strip())
+                dns_summary[current_iface].setdefault("nameservers", []).append(
+                    line.split(":")[1].strip()
+                )
             elif line.startswith("search domain["):
-                dns_summary[current_iface].setdefault("search_domains", []).append(line.split(":")[1].strip())
+                dns_summary[current_iface].setdefault("search_domains", []).append(
+                    line.split(":")[1].strip()
+                )
             elif line.startswith("interface:"):
                 dns_summary[current_iface]["interface"] = line.split(":")[1].strip()
     return dns_summary
@@ -89,7 +97,7 @@ def capture_network_state() -> dict:
     for attr, cmd in [
         ("interfaces", [ip_bin, "-j", "link"]),
         ("addresses", [ip_bin, "-j", "addr"]),
-        ("routes", [ip_bin, "-j", "route"])
+        ("routes", [ip_bin, "-j", "route"]),
     ]:
         try:
             state[attr] = json.loads(run_cmd(cmd).stdout)
@@ -104,14 +112,16 @@ def capture_network_state() -> dict:
         resolv_conf = Path("/etc/resolv.conf").read_text()
         dns_summary = capture_dns_summary()
         if doggo_bin:
-            sample_dns = run_cmd([doggo_bin, "resolve", "tailscale.com"], check=False).stdout.strip()
+            sample_dns = run_cmd(
+                [doggo_bin, "resolve", "tailscale.com"], check=False
+            ).stdout.strip()
     except Exception:
         pass
 
     state["dns"] = {
         "summary": dns_summary,
         "resolv_conf": resolv_conf,
-        "doggo_sample": sample_dns
+        "doggo_sample": sample_dns,
     }
 
     # Processes (NDJSON)

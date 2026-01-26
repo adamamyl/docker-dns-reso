@@ -4,94 +4,108 @@ Module to check and interact with Tailscale on macOS.
 Uses logger and install_utils.command_path for robust binary resolution.
 """
 
+import time
 import subprocess
-import json
-from . import logger
-from .install_utils import command_path
-from time import sleep
+from typing import Any
 
-def run_tailscale_module(log=None, force=True, dry_run=False):
+from modules.install_utils import command_path
+import modules.logger
+
+
+def run_tailscale_module(logger=None, force=True, dry_run=False):
     """
     Checks Tailscale GUI/daemon, ensures tailscaled is running, and pings reachable tailnet devices.
-    Uses logger for output and respects dry_run.
+    Uses logger for output and respects dry_run and force flags.
     """
-    log = log or logger.log
-
-    logger.log_module_start("Tailscale", exec_obj=log)
+    log = logger or logger.log
+    log.module_start("Tailscale")
 
     # --- Locate binaries ---
-    try:
-        ip_bin = command_path("ip")
-        doggo_bin = command_path("doggo")
-        tailscale_bin = command_path("tailscale")
-        tailscaled_bin = command_path("tailscaled")
-    except FileNotFoundError:
+    ip_bin = command_path("ip")
+    doggo_bin = command_path("doggo")
+    tailscale_bin = command_path("tailscale")
+    tailscaled_bin = command_path("tailscaled")
+
+    if not tailscale_bin or not tailscaled_bin:
         log.error("Required Tailscale binaries not found. Exiting module.")
         return
 
     # --- Detect GUI ---
-    ts_gui_pids = subprocess.run(
-        ["pgrep", "-f", "Tailscale"],
-        capture_output=True, text=True
-    ).stdout.strip().split()
+    ts_gui_pids = (
+        subprocess.run(["pgrep", "-f", "Tailscale"], capture_output=True, text=True)
+        .stdout.strip()
+        .split()
+    )
     if ts_gui_pids:
         log.info(f"Tailscale GUI detected (PIDs {ts_gui_pids})")
     else:
         log.info("Tailscale GUI not running")
 
     # --- Detect tailscaled daemon ---
-    tsd_pids = subprocess.run(
-        ["pgrep", "-f", "tailscaled"],
-        capture_output=True, text=True
-    ).stdout.strip().split()
+    tsd_pids = (
+        subprocess.run(["pgrep", "-f", "tailscaled"], capture_output=True, text=True)
+        .stdout.strip()
+        .split()
+    )
 
     # Start tailscaled non-blocking if not running
     if not tsd_pids:
         log.info(f"Starting tailscaled daemon: {tailscaled_bin}")
-        subprocess.Popen(
-            ["sudo", tailscaled_bin],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        sleep(5)  # allow initialization
-        tsd_pids = subprocess.run(
-            ["pgrep", "-f", "tailscaled"],
-            capture_output=True, text=True
-        ).stdout.strip().split()
+        if not dry_run:
+            subprocess.Popen(
+                ["sudo", tailscaled_bin],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            sleep(5)
+            tsd_pids = (
+                subprocess.run(
+                    ["pgrep", "-f", "tailscaled"], capture_output=True, text=True
+                )
+                .stdout.strip()
+                .split()
+            )
 
     if not ts_gui_pids and not tsd_pids:
-        log.warning("No Tailscale processes detected.")
+        log.warn("No Tailscale processes detected.")
         if force:
-            log.info("Running: tailscale up --force")
-            subprocess.run([tailscale_bin, "up", "--force"], check=False)
+            log.info(f"Running: tailscale up --force")
+            if not dry_run:
+                subprocess.run([tailscale_bin, "up", "--force"], check=False)
         else:
-            log.warning("Please start Tailscale manually. Exiting module.")
+            log.warn("Please start Tailscale manually. Exiting module.")
             return
 
     # --- Tailscale version ---
-    ts_version = subprocess.run([tailscale_bin, "version"], capture_output=True, text=True).stdout.strip() or "unknown"
+    ts_version = (
+        subprocess.run(
+            [tailscale_bin, "version"], capture_output=True, text=True
+        ).stdout.strip()
+        or "unknown"
+    )
     log.info(f"Tailscale version: {ts_version}")
 
     # --- Capture status ---
     try:
-        ts_status_raw = subprocess.run([tailscale_bin, "status", "--json"], capture_output=True, text=True).stdout
+        ts_status_raw = subprocess.run(
+            [tailscale_bin, "status", "--json"], capture_output=True, text=True
+        ).stdout
         ts_status = json.loads(ts_status_raw)
     except Exception:
         ts_status = {}
-        log.warning("Failed to read Tailscale status JSON")
+        log.warn("Failed to read Tailscale status JSON")
 
     # --- Normalize peers ---
     peers_raw = ts_status.get("Peer", [])
     peers = list(peers_raw.values()) if isinstance(peers_raw, dict) else peers_raw
 
     # --- Detect local Tailscale IP ---
-    ts_ip = None
+    ts_ip = ""
     self_ips = ts_status.get("Self", {}).get("TailscaleIPs", [])
     for ip in self_ips:
         if ip.startswith("100.") or ip.startswith("100.64"):
             ts_ip = ip
             break
-    ts_ip = ts_ip or ""
 
     log.info(f"Detected Tailscale IP: {ts_ip}")
 
@@ -112,22 +126,23 @@ def run_tailscale_module(log=None, force=True, dry_run=False):
         if dry_run:
             log.info(f"[DRY-RUN] Would ping {host} ({ip})")
             continue
-        # ping via tailscale
         ping_res = subprocess.run([tailscale_bin, "ping", "-c", "1", host], check=False)
         if ping_res.returncode == 0:
             log.success(f"Ping successful: {host} ({ip})")
         else:
-            log.warning(f"Ping failed: {host} ({ip})")
+            log.warn(f"Ping failed: {host} ({ip})")
 
         # DNS resolution via doggo
         test_fqdn = f"{host}.ts.net"
         try:
-            out = subprocess.run([doggo_bin, "query", test_fqdn], capture_output=True, text=True).stdout.strip()
+            out = subprocess.run(
+                [doggo_bin, "query", test_fqdn], capture_output=True, text=True
+            ).stdout.strip()
             if out:
                 log.success(f"DNS resolution success: {test_fqdn} -> {out}")
             else:
-                log.warning(f"DNS resolution failed: {test_fqdn}")
+                log.warn(f"DNS resolution failed: {test_fqdn}")
         except Exception:
-            log.warning(f"DNS resolution exception for {test_fqdn}")
+            log.warn(f"DNS resolution exception for {test_fqdn}")
 
     log.success("Tailscale module complete")

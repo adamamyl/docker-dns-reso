@@ -2,8 +2,8 @@ import json
 from pathlib import Path
 from typing import Dict
 
-from net_tester.utils import run_cmd, command_path
-
+import modules.utils
+from modules.install_utils import command_path
 
 def capture_network_state(log, args) -> Dict[str, object]:
     """

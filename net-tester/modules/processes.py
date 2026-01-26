@@ -1,8 +1,6 @@
 import json
 from typing import Dict
-
-from net_tester.utils import run_cmd
-
+from . import utils
 
 def capture_processes_ndjson() -> Dict[str, object]:
     """

@@ -60,3 +60,9 @@ class Logger:
         self._emit("\n" + line)
         self._emit(f"{BOLD}{CYAN}{title.center(70, '=')}{RESET}")
         self._emit(line + "\n")
+
+
+# Create a default logger instance
+log = Logger()
+def configure_logger(*, quiet=False, verbose=False, debug=False) -> Logger:
+    return Logger(quiet=quiet, verbose=verbose, debug=debug)
