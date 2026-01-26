@@ -1,65 +1,59 @@
-# modules/dnsmasq.py
 """
-DNSMasq module for net-tester
-
-Provides functions to check if dnsmasq is running, capture its
-state for snapshots, and optionally inspect config files / leases.
+dnsmasq.py
+Module for dnsmasq configuration and status.
 """
 
 import subprocess
 from pathlib import Path
-from .logger import log
+from . import logger
+from .install_utils import command_path
 
-def run_cmd(cmd, check=True, capture=True):
-    """Helper to run a shell command and return result."""
-    result = subprocess.run(cmd, capture_output=capture, text=True, check=check)
-    return result.stdout.strip()
+DEFAULT_CONFIG = """\
+listen-address=127.0.0.1
+no-resolv
+server=1.1.1.1
+"""
 
-def is_running() -> bool:
+def is_running(log=None):
     """
-    Check if dnsmasq process is currently running.
-    Returns True if at least one process is found, else False.
+    Checks if dnsmasq process is running.
+    Returns True if running, False otherwise.
     """
-    try:
-        output = run_cmd(["pgrep", "-x", "dnsmasq"], check=False)
-        return bool(output)
-    except Exception as e:
-        log.warning(f"Error checking dnsmasq status: {e}")
+    log = log or logger.log
+    dns_bin = command_path("dnsmasq")
+    res = subprocess.run(["pgrep", "-f", "dnsmasq"], capture_output=True, text=True)
+    if res.stdout.strip():
+        log.success("dnsmasq is running")
+        return True
+    else:
+        log.warning("dnsmasq not running")
         return False
 
-def capture_state() -> dict:
+def create_config(cfg_path: str = "/usr/local/etc/dnsmasq.conf", content: str = DEFAULT_CONFIG, log=None, dry_run=False):
     """
-    Capture current dnsmasq state for logging / snapshot purposes.
-    Includes:
-      - running status
-      - active PIDs
-      - configuration files (if accessible)
-      - leases (if accessible)
+    Writes a dnsmasq config file.
     """
-    state = {"running": False, "pids": [], "configs": [], "leases": None}
+    log = log or logger.log
+    cfg_file = Path(cfg_path)
+    if dry_run:
+        log.info(f"[DRY-RUN] Would write dnsmasq config to {cfg_file}")
+        log.debug(f"Config content:\n{content}")
+        return cfg_file
 
-    # Detect running processes
-    try:
-        pids_output = run_cmd(["pgrep", "-x", "dnsmasq"], check=False)
-        pids = [int(pid) for pid in pids_output.splitlines() if pid.isdigit()]
-        state["pids"] = pids
-        state["running"] = bool(pids)
-    except Exception as e:
-        log.warning(f"Failed to capture dnsmasq PIDs: {e}")
+    cfg_file.parent.mkdir(parents=True, exist_ok=True)
+    cfg_file.write_text(content)
+    log.success(f"dnsmasq config written to {cfg_file}")
+    return cfg_file
 
-    # Config files (typical locations, adjust if needed)
-    possible_configs = ["/etc/dnsmasq.conf", "/usr/local/etc/dnsmasq.conf"]
-    for cfg in possible_configs:
-        cfg_path = Path(cfg)
-        if cfg_path.exists():
-            state["configs"].append(str(cfg_path))
+def start_dnsmasq(log=None, dry_run=False):
+    """
+    Starts dnsmasq in the background.
+    """
+    log = log or logger.log
+    dns_bin = command_path("dnsmasq")
+    if dry_run:
+        log.info(f"[DRY-RUN] Would start dnsmasq: {dns_bin}")
+        return
 
-    # Lease file (if exists)
-    lease_file = Path("/var/db/dnsmasq.leases")
-    if lease_file.exists():
-        try:
-            state["leases"] = lease_file.read_text().splitlines()
-        except Exception as e:
-            log.warning(f"Failed to read dnsmasq leases: {e}")
-
-    return state
+    subprocess.Popen([dns_bin], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    log.success("dnsmasq started")
