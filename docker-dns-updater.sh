@@ -13,6 +13,7 @@ DRY_RUN=0
 FORCE=0
 QUIET=0
 UPDATE_PROFILE=0
+USE_SYSTEM_DNS=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -21,6 +22,7 @@ while [[ $# -gt 0 ]]; do
         --force)            FORCE=1     ;;
         --quiet)            QUIET=1     ;;
         --update-profile)   UPDATE_PROFILE=1    ;;
+        --use-system-dns)   USE_SYSTEM_DNS=1    ;;
         *)
             echo "Unknown option: $1" >&2
             exit 1

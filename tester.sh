@@ -6,7 +6,8 @@ set -exuo pipefail
 # Docker + Tailscale + NordVPN DNS Test
 # ========================================
 
-LOG_FILE="./dns_test.${RANDOM}.log"
+LOG_FILE="./nxn-test.${RANDOM}.log"
+SYMLINK="./latest.log"
 DOCKER_CONTAINER="$(diceware -n 2 -d- | tr '[:upper:]' '[:lower:]')"
 DOCKER_IMAGE="nginx"
 LOOPBACK_IP="10.0.0.1"
@@ -191,6 +192,13 @@ run_scenario() {
 # -------------------------------
 # Main Flow
 # -------------------------------
+
+# symlink logfile
+if [[ -L ${SYMLINK} ]]; then
+    rm -l ${SYMLINK}
+fi
+ln -s ${LOG_FILE} ${SYMLINK} || echo "Unable to symlink logfile"
+
 
 log "=== Docker + Tailscale + VPN DNS Test ==="
 log "Stopping all services if running..."

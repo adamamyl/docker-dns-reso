@@ -1,21 +1,19 @@
 #!/usr/bin/env bash
-# network_test.sh
-# Modern Bash network testing script (dnsmasq + Docker + Tailscale)
-# Modular, idempotent, verbose, dry-run, cross-platform aware
+# network-test.sh
+# Modern Bash network tester (dnsmasq + Docker + Tailscale)
+# JSON snapshot outputs, modular, verbose, dry-run, cross-platform aware
 
 set -euo pipefail
 IFS=$'\n\t'
 
 # === Globals ===
 SCRIPT_NAME=$(basename "$0")
-
-# === Base directories ===
 BASEDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # --- Logs ---
 LOG_DIR="$BASEDIR/logs"
 mkdir -p "$LOG_DIR"
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+TIMESTAMP=$(/bin/date +%Y%m%d-%H%M%S)
 LOG_FILE="$LOG_DIR/network_test.$TIMESTAMP.log"
 SYMLINK="$LOG_DIR/latest-net.log"
 
@@ -28,16 +26,58 @@ MODULE="all"
 declare -A SUMMARY_RESULTS
 
 # === Colors & Emojis ===
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-EMOJI_INFO="🟢"; EMOJI_WARN="🟡"; EMOJI_ERROR="🔴"; EMOJI_OK="✅"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-# === Logging ===
-log() { local level="$1"; shift; local msg="$*"; echo -e "${level} [${SCRIPT_NAME}] $(date +%T) $msg" | tee -a "$LOG_FILE"; }
-info() { log "${EMOJI_INFO}[INFO]" "$@"; }
-warn() { log "${EMOJI_WARN}[WARN]" "$@"; }
+EMOJI_INFO="🟢"
+EMOJI_WARN="🟡"
+EMOJI_ERROR="🔴"
+EMOJI_OK="✅"
+
+# Silence unused SC2034 warnings
+: "$RED" "$GREEN" "$YELLOW" "$BLUE" "$NC" "$EMOJI_OK"
+
+# === Command wrappers (updated later, in preflight) ===
+cmd_sed="/usr/bin/sed"
+cmd_awk="/usr/bin/awk"
+cmd_date="/bin/date"   # fallback for early logging
+cmd_jq=""
+cmd_ip2mac=""
+cmd_ps="/bin/ps"
+
+# === Preflight: detect/install tools ===
+detect_and_install_tools() {
+    info "🟢 Checking GNU utilities prerequisites..."
+
+    # Map of commands → wrappers
+    local -A gnutils=( ["gsed"]="sed" ["gawk"]="awk" ["gdate"]="date" ["jq"]="jq" ["iproute2mac"]="ip2mac" ["ps"]="ps" )
+
+    local cmd bin
+    for cmd in "${!gnutils[@]}"; do
+        if bin=$(command -v "$cmd" 2>/dev/null); then
+            info "Found $cmd → $bin"
+            declare -g "cmd_${gnutils[$cmd]}=$bin"
+        else
+            warn "$cmd not found"
+        fi
+    done
+
+    info "✅ GNU utility preflight complete."
+}
+
+# === Logging Helpers ===
+log() {
+    local level="$1"; shift
+    local msg="$*"
+    echo -e "${level} [${SCRIPT_NAME}] $($cmd_date '+%T') $msg" | tee -a "$LOG_FILE"
+}
+info()  { log "${EMOJI_INFO}[INFO]" "$@"; }
+warn()  { log "${EMOJI_WARN}[WARN]" "$@"; }
 error() { log "${EMOJI_ERROR}[ERROR]" "$@"; }
 
-# === Helpers ===
 run_cmd() {
     local cmd="$*"
     if [[ "$DRY_RUN" == true ]]; then
@@ -47,222 +87,204 @@ run_cmd() {
     fi
 }
 
-snapshot_dns() {
-    local label="$1"
-    info "Snapshot DNS ($label)"
-    echo "### /etc/resolv.conf" >> "$LOG_FILE"
-    cat /etc/resolv.conf >> "$LOG_FILE"
-    echo >> "$LOG_FILE"
-    echo "### scutil --dns" >> "$LOG_FILE"
-    scutil --dns >> "$LOG_FILE" || true
-    echo >> "$LOG_FILE"
-}
-
-snapshot_routes() {
-    local label="$1"
-    info "Snapshot routes ($label)"
-    netstat -rn >> "$LOG_FILE" || true
-}
-
-snapshot_interfaces() {
-    local label="$1"
-    info "Snapshot interfaces ($label)"
-    ifconfig >> "$LOG_FILE" || true
-}
-
 # === Symlink latest log ===
 update_symlink() {
     ln -sf "$LOG_FILE" "$SYMLINK"
     info "Updated symlink: $SYMLINK -> $LOG_FILE"
 }
 
+# === JSON Snapshots ===
+snapshot_dns() {
+    local label="$1"
+    info "🟢 Snapshot DNS ($label)"
 
-update_symlink
+    local resolv_json
+    resolv_json=$($cmd_jq -n --rawfile r /etc/resolv.conf "\$r | split(\"\n\")")
+    echo "{\"label\":\"$label\",\"resolv_conf\":$resolv_json}" >> "$LOG_FILE"
+
+    if scutil --dns >/dev/null 2>&1; then
+        local scutil_json
+        scutil_json=$(scutil --dns | $cmd_jq -R -s 'split("\n")')
+        echo "{\"label\":\"$label\",\"scutil_dns\":$scutil_json}" >> "$LOG_FILE"
+    else
+        warn "scutil --dns failed"
+    fi
+}
+
+snapshot_routes() {
+    local label="$1"
+    info "🟢 Snapshot routes ($label)"
+
+    if command -v netstat >/dev/null 2>&1; then
+        local routes_json
+        routes_json=$(netstat -rn | $cmd_jq -R -s 'split("\n")')
+        echo "{\"label\":\"$label\",\"routes\":$routes_json}" >> "$LOG_FILE"
+    else
+        warn "netstat not available"
+    fi
+}
+
+snapshot_interfaces() {
+    local label="$1"
+    info "🟢 Snapshot interfaces ($label)"
+
+    if command -v ifconfig >/dev/null 2>&1; then
+        local if_json
+        if_json=$(ifconfig | $cmd_jq -R -s 'split("\n")')
+        echo "{\"label\":\"$label\",\"interfaces\":$if_json}" >> "$LOG_FILE"
+    else
+        warn "ifconfig not available"
+    fi
+}
 
 # === Modules ===
 
-# --- ps Module ---
+# --- PS Module ---
 run_ps_module() {
-    info "Running process snapshot module"
-    ps -e -o pid,comm | grep -Ei "(tailscale|tailscaled|nordvpn|nordvpnd|dnsmasq|docker|dockerd)" \
-        | tee -a "$LOG_FILE" || echo "No matching processes running" | tee -a "$LOG_FILE"
+    info "🟢 Starting process snapshot module"
+    [[ "$VERBOSE" == true ]] && info "Listing all relevant processes..."
 
-    echo "" | tee -a "$LOG_FILE"
+    if [[ -n "$cmd_ps" && -n "$cmd_jq" ]]; then
+        # JSON array of PS output lines, non-interactive
+        ps_json=$($cmd_ps -e -o pid,comm | $cmd_jq -R -s 'split("\n")')
+        echo "{\"module\":\"ps\",\"processes\":$ps_json}" >> "$LOG_FILE"
+    else
+        warn "cmd_ps or cmd_jq not defined"
+    fi
+
+    info "✅ Process snapshot complete"
+    echo
 }
 
-# --- dnsmasq Module ---
+# --- DNSMasq Module ---
 dnsmasq_stop() {
+    info "🟡 Stopping dnsmasq if running"
     if pgrep dnsmasq >/dev/null 2>&1; then
-        info "Stopping dnsmasq"
         run_cmd "sudo pkill dnsmasq"
+        info "✅ dnsmasq stopped"
     else
         warn "dnsmasq not running"
     fi
 }
 
 dnsmasq_start() {
-    info "Writing dnsmasq config"
+    info "🟢 Writing dnsmasq test config"
     local cfg="/tmp/dnsmasq-test.conf"
+
     cat > "$cfg" <<EOF
 listen-address=127.0.0.1
 no-resolv
 server=1.1.1.1
 EOF
-    info "Starting dnsmasq"
+
+    info "🟢 Starting dnsmasq daemon"
     run_cmd "sudo dnsmasq -C $cfg"
 }
 
 run_dnsmasq_module() {
-    info "=== Network DNS Test (dnsmasq focus) ==="
-
-    # Scenario 1: baseline without dnsmasq
-    snapshot_dns "before-baseline-no-dnsmasq"
-    snapshot_routes "before-baseline-no-dnsmasq"
-    snapshot_interfaces "before-baseline-no-dnsmasq"
+    info "🟢 Running DNSMasq module"
+    snapshot_dns "before-dnsmasq"
     dnsmasq_stop
-    snapshot_dns "after-baseline-no-dnsmasq"
-    SUMMARY_RESULTS["baseline-no-dnsmasq"]="false|no|fail|$(scutil --dns | grep resolver | wc -l)"
-
-    # Scenario 2: with dnsmasq
+    snapshot_dns "after-stop"
     dnsmasq_start
-    snapshot_dns "after-with-dnsmasq"
-    SUMMARY_RESULTS["with-dnsmasq"]="true|yes|ok|$(scutil --dns | grep resolver | wc -l)"
+    snapshot_dns "after-start"
     dnsmasq_stop
+    info "✅ DNSMasq module complete"
+    echo
 }
 
 # --- Docker Module ---
 docker_check() {
     if ! command -v docker >/dev/null 2>&1; then
-        warn "Docker not installed, skipping Docker tests"
+        warn "Docker CLI not installed, skipping Docker module"
         return 1
     fi
     if ! docker info >/dev/null 2>&1; then
-        warn "Docker daemon not running, skipping Docker tests"
+        warn "Docker daemon not running, skipping Docker module"
         return 1
     fi
     return 0
 }
 
 run_docker_module() {
-    if ! docker_check; then return; fi
+    info "🟢 Running Docker network module"
 
-    info "=== Docker Bridge Network Test ==="
+    if ! docker_check; then
+        warn "Docker module skipped"
+        return
+    fi
+
     local test_image="alpine:3.18"
-    local container_name="nettest_$TIMESTAMP"
+    local timestamp
+    timestamp=$($cmd_date '+%s')
+    local container_name="nettest_$timestamp"
 
     run_cmd "docker pull $test_image"
-
-    # Run container on bridge network, minimal test
     run_cmd "docker run --rm --name $container_name $test_image sh -c 'echo Hello; nslookup google.com'"
 
-    # TODO: Expand to multi-network / macvlan / custom networks
-    SUMMARY_RESULTS["docker-bridge"]="true|yes|ok|1"
+    info "✅ Docker network module complete"
+    echo
 }
 
 # --- Tailscale Module ---
 run_tailscale_module() {
-    info "Running Tailscale module"
+    info "🟢 Starting Tailscale module"
 
-    # --- 1. Detect running Tailscale processes ---
+    local TS_GUI_PID TS_DAEMON_PID TS_BIN TS_INTERFACE TS_IP reachable_devices TS_STATUS
     TS_GUI_PID=$(pgrep -f 'Tailscale')
     TS_DAEMON_PID=$(pgrep -f 'tailscaled')
 
-    if [[ -n "$TS_GUI_PID" ]]; then
-        info "Tailscale GUI detected (PID $TS_GUI_PID)"
-    fi
+    [[ -n "$TS_GUI_PID" ]] && info "Tailscale GUI detected (PID $TS_GUI_PID)"
 
-    # --- 2. Attempt to start tailscaled if not running ---
     if [[ -z "$TS_DAEMON_PID" ]]; then
-        # Possible locations for tailscaled binary
-        for candidate in \
-            "$(command -v tailscaled 2>/dev/null)" \
-            "$HOME/go/bin/tailscaled"; do
-            if [[ -x "$candidate" ]]; then
-                TS_BIN="$candidate"
-                break
-            fi
+        for candidate in "$(command -v tailscaled 2>/dev/null)" "$HOME/go/bin/tailscaled"; do
+            [[ -x "$candidate" ]] && TS_BIN="$candidate" && break
         done
-
-        if [[ -n "$TS_BIN" ]]; then
-            info "Tailscale daemon not running, attempting to start $TS_BIN"
-            sudo "$TS_BIN" &>/dev/null &
-            sleep 2
-            TS_DAEMON_PID=$(pgrep -f 'tailscaled')
-            if [[ -n "$TS_DAEMON_PID" ]]; then
-                info "Tailscaled started successfully (PID $TS_DAEMON_PID)"
-            else
-                warn "Failed to start tailscaled via $TS_BIN"
-            fi
-        else
-            warn "No tailscaled binary found in PATH or ~/go/bin"
-        fi
+        [[ -n "$TS_BIN" ]] && run_cmd "sudo $TS_BIN &" && sleep 2 && TS_DAEMON_PID=$(pgrep -f 'tailscaled')
     fi
 
-    # --- 3. If no Tailscale processes are running ---
     if [[ -z "$TS_GUI_PID" && -z "$TS_DAEMON_PID" ]]; then
-        if [[ "$FORCE" != "true" ]]; then
-            read -p "Please start Tailscale and log in if needed, then press [Enter] to continue..."
-        else
-            warn "Force mode: continuing despite tailscaled not running."
-        fi
-        warn "No Tailscale processes detected. Please start Tailscale GUI or tailscaled."
+        [[ "$FORCE" != true ]] && read -r -p "Start Tailscale manually, then press [Enter]..."
+        warn "No Tailscale processes detected"
         return
     fi
 
-    # --- 4. Log Tailscale version for debugging ---
     TS_VERSION=$(tailscale version 2>/dev/null || echo "unknown")
     info "Tailscale version: $TS_VERSION"
 
-    # --- 5. Show Tailscale status ---
-    if [[ -n "$TS_DAEMON_PID" ]]; then
-        TS_STATUS=$(tailscaled status --json 2>/dev/null || tailscale status)
-        info "Tailscale status:\n$TS_STATUS"
-    else
-        info "Tailscaled not running; limited info from GUI only"
-        tailscale status || warn "Failed to fetch tailscale status"
-    fi
+    TS_STATUS=$(tailscaled status --json 2>/dev/null || tailscale status || echo "{}")
+    info "Tailscale status:\n$TS_STATUS"
 
-    # --- 6. Detect local Tailscale interface and IP ---
     TS_INTERFACE=""
-    TS_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "")
-    for iface in $(ifconfig -l); do
-        ips=$(ifconfig $iface | grep 'inet ' | awk '{print $2}')
+    TS_IP=""
+    for iface in $($cmd_ip2mac -l); do
+        ips=$($cmd_ip2mac "$iface" | $cmd_awk '/inet /{print $2}')
         for ip in $ips; do
-            # Detect Tailscale IP range 100.x.x.x
-            if [[ $ip =~ ^100\.(6[0-3]|[6-9][0-9]|[1-9][0-9]?)\..* ]]; then
-                TS_INTERFACE=$iface
-                TS_IP=$ip
-                break 2
-            fi
+            [[ $ip =~ ^100\..* ]] && TS_INTERFACE=$iface && TS_IP=$ip && break 2
         done
     done
+    TS_INTERFACE=${TS_INTERFACE:-fallback}
+    TS_IP=${TS_IP:-""}
+    info "Detected Tailscale interface: $TS_INTERFACE, IP: $TS_IP"
 
-    if [[ -z "$TS_INTERFACE" ]]; then
-        warn "No active Tailscale interface found, using fallback IP: $TS_IP"
-        TS_INTERFACE="fallback"
-    else
-        info "Detected Tailscale interface: $TS_INTERFACE with IP $TS_IP"
-    fi
+    reachable_devices=$(tailscale status --json 2>/dev/null | $cmd_jq -r '.Peer[] | select(.Online==true) | "\(.HostName) \(.TailscaleIPs[])"')
+    reachable_devices=${reachable_devices:-"hendricks 100.74.101.85"}
 
-    # --- 7. Fetch reachable Tailscale devices ---
-    reachable_devices=$(tailscale status --json 2>/dev/null | jq -r '.Peer[] | select(.Online==true) | "\(.HostName) \(.TailscaleIPs[])"')
-    if [[ -z "$reachable_devices" ]]; then
-        warn "No online Tailscale nodes found, falling back to 'hendricks'"
-        reachable_devices="hendricks 100.74.101.85"
-    fi
-
-    # --- 8. Ping reachable devices ---
-    echo "$reachable_devices" | while read -r host ip; do
+    while read -r host ip; do
         [[ "$ip" == "$TS_IP" ]] && continue
-        if [[ "$DRY_RUN" == "true" ]]; then
+        if [[ "$DRY_RUN" == true ]]; then
             info "[DRY-RUN] Would ping: $host ($ip)"
         else
-            ping_output=$(tailscale ping -c 1 "$host" 2>&1)
-            [[ $? -eq 0 ]] && info "Ping successful: $host ($ip) - $ping_output" || warn "Ping failed: $host ($ip) - $ping_output"
+            if tailscale ping -c 1 "$host" >/dev/null 2>&1; then
+                info "Ping successful: $host ($ip)"
+            else
+                warn "Ping failed: $host ($ip)"
+            fi
         fi
-    done
+    done <<< "$reachable_devices"
 
-    info "Tailscale module complete"
+    info "✅ Tailscale module complete"
+    echo
 }
 
 # === Summary Table ===
@@ -324,6 +346,7 @@ run_module() {
 
 # === Main Execution ===
 main() {
+    detect_and_install_tools
     run_module "$MODULE"
     print_summary
     update_symlink

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
+#set -euo pipefail
+set -x
 # ------------------------------------------------------------------
 # Installer for docker-dns + optional Quad9 and plain DNS setup
 # Supports:
@@ -35,6 +36,13 @@ echo "Installing docker-dns on $OS (config=$CONFIG)..."
 DEPS=(dnsmasq jq)
 
 if [[ "$OS" == "Darwin" ]]; then
+    # Determine Homebrew prefix early
+    PREFIX="$(brew --prefix)"
+
+    # Ensure dnsmasq config directory exists
+    mkdir -p "$PREFIX/etc/dnsmasq.d"
+    install -m 644 /dev/null "$PREFIX/etc/dnsmasq.d/docker-hosts.conf"
+
     for p in "${DEPS[@]}"; do
         if ! command -v "$p" >/dev/null 2>&1; then
             echo "Installing $p..."
@@ -42,13 +50,40 @@ if [[ "$OS" == "Darwin" ]]; then
         fi
     done
 
-    # Start dnsmasq if not running
-    if ! brew services list | grep -q '^dnsmasq.*started'; then
-        brew services start dnsmasq
+    # Ensure loopback alias for DNS
+    LOOPBACK_IP="10.0.0.1"
+    if ! ifconfig lo0 | grep -q "$LOOPBACK_IP"; then
+        echo "Adding loopback alias $LOOPBACK_IP..."
+        sudo ifconfig lo0 alias $LOOPBACK_IP
     fi
 
-    PREFIX="$(brew --prefix)"
-    mkdir -p "$PREFIX/etc/dnsmasq.d"
+    # Configure dnsmasq to bind to loopback alias on port 53
+    DNSMASQ_CONF="$PREFIX/etc/dnsmasq.conf"
+    sudo tee "$DNSMASQ_CONF" >/dev/null <<EOF
+listen-address=$LOOPBACK_IP
+bind-interfaces
+conf-file=$PREFIX/etc/dnsmasq.d/docker-hosts.conf
+EOF
+
+    # Ensure loopback alias exists for port 53
+    LOOPBACK_IP=10.0.0.1
+    if ! ifconfig lo0 | grep -q "$LOOPBACK_IP"; then
+        sudo ifconfig lo0 alias $LOOPBACK_IP
+    fi
+
+    # Stop any existing user service
+    sudo brew services stop dnsmasq >/dev/null 2>&1 || true
+
+    # Start as a system-wide daemon
+    sudo brew services start dnsmasq
+
+    # Verify dnsmasq
+    sudo lsof -i :53 | grep dnsmasq || echo "dnsmasq failed to start!"
+    
+    # Ensure /etc/resolver/internal points to loopback alias
+    sudo mkdir -p /etc/resolver
+    echo "nameserver $LOOPBACK_IP" | sudo tee /etc/resolver/internal
+
 else
     # Linux (Debian/Ubuntu) installation
     APT_UPDATED=0
@@ -91,7 +126,7 @@ sudo install -m 755 docker-dns-updater.sh /usr/local/bin/docker-dns-updater.sh
 if [[ "$OS" == "Darwin" ]]; then
     # macOS resolver for *.internal
     sudo mkdir -p /etc/resolver
-    sudo install -m 644 macos/resolver/internal /etc/resolver/internal
+    sudo install -m 644 ./macos/resolver/docker.internal /etc/resolver/docker.internal
 
     # Install LaunchDaemon
     PLIST_SRC="macos/docker-dns-updater.plist"

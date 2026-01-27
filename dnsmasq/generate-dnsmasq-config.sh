@@ -16,14 +16,10 @@ if [[ "$OS" == "Darwin" ]]; then
     # Create empty Docker hosts config (will be updated dynamically)
     install -m 644 /dev/null "$DIR/docker-hosts.conf"
 
-    # Include help.internal TXT record
-    install -m 644 ../dnsmasq/help-internal.conf "$DIR/help-internal.conf"
-
-    # Main dnsmasq.conf
+    # Main dnsmasq.conf for macOS: bind loopback alias on port 53
+    LOOPBACK_IP="10.0.0.1"
     cat >"$CONF" <<EOF
-# Listen only on localhost
-listen-address=127.0.0.1
-listen-address=::1
+listen-address=$LOOPBACK_IP
 bind-interfaces
 # Include dynamic Docker hosts
 conf-file=$DIR/docker-hosts.conf
@@ -58,9 +54,6 @@ fi
 # Create empty Docker hosts config
 sudo install -m 644 /dev/null /etc/dnsmasq.d/docker-hosts.conf
 
-# Include help.internal TXT record
-sudo install -m 644 ../dnsmasq/help-internal.conf /etc/dnsmasq.d/help-internal.conf
-
 # Main dnsmasq configuration
 sudo tee "$CONF" >/dev/null <<EOF
 # Listen on localhost
@@ -70,8 +63,6 @@ listen-address=::1
 bind-interfaces
 # Include dynamic Docker hosts
 conf-file=/etc/dnsmasq.d/docker-hosts.conf
-# Include static help TXT record
-conf-file=/etc/dnsmasq.d/help-internal.conf
 EOF
 
 
