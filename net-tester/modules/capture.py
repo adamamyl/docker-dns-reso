@@ -10,19 +10,26 @@ Capture network and system state on macOS for net-tester.
 
 import json
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Any, List, Optional
 
 import modules.logger as logmod
 from modules.install_utils import command_path, get_brew_prefix, run_cmd
 
 
-def capture_processes() -> str:
+def capture_processes(
+    dry_run: bool = False, check: bool = True, capture_output: bool = True
+) -> str:
     """
     Capture the currently running processes as NDJSON.
     Each line is a JSON object describing a single process.
     """
     try:
-        output = run_cmd(["ps", "-axo", "pid,ppid,uid,gid,comm"]).stdout.strip().splitlines()
+        output = run_cmd(
+            ["ps", "-axo", "pid,ppid,uid,gid,comm"],
+            dry_run=dry_run,
+            check=check,
+            capture_output=capture_output,
+        ).stdout.strip().splitlines()
     except Exception:
         return ""
 
@@ -49,7 +56,9 @@ def capture_processes() -> str:
     return "\n".join(ndjson_lines)
 
 
-def capture_dns_summary() -> Dict[str, Dict]:
+def capture_dns_summary(
+    dry_run: bool = False, check: bool = True, capture_output: bool = True
+) -> Dict[str, Dict]:
     """
     Capture a compact DNS summary for diffing snapshots.
     Summarizes per resolver/interface info, reducing the full scutil --dns output (~100 lines)
@@ -57,7 +66,9 @@ def capture_dns_summary() -> Dict[str, Dict]:
     """
     dns_summary = {}
     try:
-        scutil_output = run_cmd(["scutil", "--dns"]).stdout.splitlines()
+        scutil_output = run_cmd(
+            ["scutil", "--dns"], dry_run=dry_run, check=check, capture_output=capture_output
+        ).stdout.splitlines()
     except Exception:
         return dns_summary
 
@@ -82,7 +93,29 @@ def capture_dns_summary() -> Dict[str, Dict]:
     return dns_summary
 
 
-def capture_network_state() -> Dict[str, object]:
+def doggo_query(
+    domain: str = "example.com",
+    dry_run: bool = False,
+    check: bool = True,
+    capture_output: bool = True,
+) -> Dict[str, Optional[str]]:
+    """
+    Sample DNS query using 'doggo' if available.
+    """
+    try:
+        result = run_cmd(
+            ["doggo", domain],
+            dry_run=dry_run,
+            check=check,
+            capture_output=capture_output,
+        )
+        return {"doggo_output": result.stdout.decode()}
+    except FileNotFoundError:
+        logmod.get_logger().warning("Doggo not installed, skipping DNS query")
+        return {"doggo_output": None}
+
+
+def capture_network_state(dry_run: bool = False) -> Dict[str, Any]:
     """
     Capture full network state:
 
@@ -92,7 +125,7 @@ def capture_network_state() -> Dict[str, object]:
     - processes (NDJSON)
     - DNS summary + sample doggo resolution
     """
-    state: Dict[str, object] = {}
+    state: Dict[str, Any] = {}
 
     # Determine binaries
     ip_bin = command_path("ip") or f"{get_brew_prefix()}/bin/ip"
@@ -105,7 +138,7 @@ def capture_network_state() -> Dict[str, object]:
         ("routes", [ip_bin, "-j", "route"]),
     ]:
         try:
-            state[attr] = json.loads(run_cmd(cmd).stdout)
+            state[attr] = json.loads(run_cmd(cmd, dry_run=dry_run).stdout)
         except Exception:
             state[attr] = []
 
@@ -115,10 +148,10 @@ def capture_network_state() -> Dict[str, object]:
     sample_dns = ""
     try:
         resolv_conf = Path("/etc/resolv.conf").read_text()
-        dns_summary = capture_dns_summary()
+        dns_summary = capture_dns_summary(dry_run=dry_run)
 
         if doggo_bin:
-            sample_dns = run_cmd([doggo_bin, "resolve", "tailscale.com"], check=False).stdout.strip()
+            sample_dns = doggo_query("tailscale.com", dry_run=dry_run)["doggo_output"]
     except Exception:
         pass
 
@@ -129,6 +162,6 @@ def capture_network_state() -> Dict[str, object]:
     }
 
     # Processes (NDJSON)
-    state["processes"] = capture_processes()
+    state["processes"] = capture_processes(dry_run=dry_run)
 
     return state
