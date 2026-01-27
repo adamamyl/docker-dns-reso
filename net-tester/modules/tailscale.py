@@ -57,7 +57,7 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            sleep(5)
+            time.sleep(5)
             tsd_pids = (
                 subprocess.run(
                     ["pgrep", "-f", "tailscaled"], capture_output=True, text=True
