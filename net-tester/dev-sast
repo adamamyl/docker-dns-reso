@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# dev-sast.sh — run all SAST + linting checks for net-tester
+set -euo pipefail
+
+echo "🟢 Starting SAST + lint checks..."
+
+# --- pylint ---
+echo "===================="
+echo "📝 Running pylint..."
+pylint modnettest.py modules/ --ignore-patterns='(__pycache__|\.venv|\.git|node_modules)' || true
+
+# --- mypy ---
+echo "===================="
+echo "🔎 Running mypy..."
+PYTHONPATH=. mypy modules --ignore-missing-imports || true
+
+# --- bandit ---
+echo "===================="
+echo "🛡️ Running bandit (security)..."
+bandit -r modules -lll -ii
+
+# --- flake8 ---
+echo "===================="
+echo "📏 Running flake8..."
+flake8 modnettest.py modules/ \
+    --max-line-length=120 \
+    --ignore=E203,W503 || true
+
+# --- optional: code formatting checks ---
+if command -v black >/dev/null 2>&1; then
+    echo "===================="
+    echo "🎨 Running black check..."
+    black --check . || true
+fi
+
+if command -v isort >/dev/null 2>&1; then
+    echo "===================="
+    echo "📚 Running isort check..."
+    isort --check-only . || true
+fi
+
+echo "===================="
+echo "✅ All checks complete."
