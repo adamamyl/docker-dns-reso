@@ -10,14 +10,21 @@ import logging
 
 from pathlib import Path
 from typing import Optional, Any, Protocol
+
 import modules.logger as logmod
+from modules.logger import Logger
 
 # Define a Protocol so mypy knows what methods a logger has
 class LoggerProtocol(Protocol):
     def info(self, msg: str) -> None: ...
     def warning(self, msg: str) -> None: ...
+    def error(self, msg: str) -> None: ...
     def success(self, msg: str) -> None: ...
-    log: LoggerProtocol = logmod.log  # fallback to internal logger
+
+
+# Lazy access to avoid circular import issues
+def get_logger() -> LoggerProtocol:
+    return logmod.log
 
 MAX_POSTS = 10  # safety limit on number of chunks
 
@@ -27,20 +34,9 @@ def send_to_chatgpt(
     scenario: str = "",
     chunk_size: int = 500,
     dry_run: bool = False,
-    logger: Optional[logmod.logging.Logger] = None,
+    logger: Optional[LoggerProtocol] = None,
 ):
-    """
-    Send text/logs to ChatGPT in chunks.
-
-    Args:
-        text: Full text to send.
-        scenario: Optional scenario name for context.
-        chunk_size: Number of lines per chunk.
-        dry_run: If True, do not actually post.
-        logger: Optional logger instance.
-    """
-    log = logger or print
-
+    log = logger or get_logger()
     lines = text.splitlines()
     total_chunks = math.ceil(len(lines) / chunk_size)
 
@@ -60,8 +56,8 @@ def send_to_chatgpt(
         if idx == 0:
             # prepend instruction only on first chunk
             instructions = [
-                f"You are analyzing the log/snapshot of our network tester for scenario '{scenario}'.",
-                "The log is split into multiple posts. Do NOT respond until all chunks are received.",
+                f"You are analyzing the log/snapshot for scenario '{scenario}'.",
+                "Chunks follow. Do NOT respond until all chunks are received.",
                 f"I will indicate each chunk as 'Chunk X of {total_chunks}'.",
                 "Your task: highlight changes, note errors/missing services, suggest potential fixes.",
                 "Begin receiving chunks now.\n",
@@ -74,15 +70,16 @@ def send_to_chatgpt(
             # Here we just copy to clipboard and ask the user to paste
             try:
                 import subprocess
-
                 subprocess.run(["pbcopy"], input=chunk_text.encode(), check=True)
                 log.success(f"Chunk {idx+1} of {total_chunks} copied to clipboard")
             except Exception:
                 log.warning(f"Failed to copy chunk {idx+1} to clipboard")
 
-        if idx < total_chunks - 1:
-            input(
-                f"[yellow]Paste chunk {idx+1} into ChatGPT and press Enter for next...[/yellow]"
-            )
+        # ⚡ Always ring bell and wait for user before next chunk
+        log.bell()
+        input(f"{logmod.YELLOW}Paste chunk {idx+1} into ChatGPT and press Enter for next...{logmod.RESET}")
+
 
     log.info(f"All {total_chunks} chunks for scenario '{scenario}' processed")
+    log.bell()
+    input(f"{logmod.YELLOW}All chunks sent. Press Enter to finish...{logmod.RESET}")

@@ -18,6 +18,9 @@ ERR = "❌"
 DEBUG = "🔎"
 MODULE = "📦"
 
+# --- Bell ---
+BELL = "\a"  # terminal bell
+
 
 class Logger:
     def __init__(self, *, quiet=False, verbose=False, debug=False):
@@ -50,6 +53,10 @@ class Logger:
         if not self.debug_enabled:
             return
         self._emit(f"{MAGENTA}{DEBUG} {msg}{RESET}")
+    
+    def bell(self):
+        sys.stdout.write(BELL + "\n")
+
 
     # --- structure ---
     def module_start(self, name: str):

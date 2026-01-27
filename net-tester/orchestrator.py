@@ -176,11 +176,28 @@ def main():
         if resp == "y":
             from modules.chatgpt import send_to_chatgpt  # Optional module
 
+            # Aggregate all scenarios
+            all_snapshots_text = ""
             for sc in scenarios:
                 if "state" in sc:
-                    send_to_chatgpt(
-                        json.dumps(sc["state"], indent=2), scenario=sc["name"]
-                    )
+                    scenario_name = sc["name"]
+                    # Combine JSON and processes NDJSON for that scenario
+                    state_copy = sc["state"].copy()
+                    processes_ndjson = state_copy.pop("processes", "")
+                    json_text = json.dumps(state_copy, indent=2)
+                    all_snapshots_text += f"\n=== Scenario: {scenario_name} ===\n"
+                    all_snapshots_text += json_text + "\n"
+                    if processes_ndjson:
+                        all_snapshots_text += f"\n--- Processes NDJSON ({scenario_name}) ---\n"
+                        all_snapshots_text += processes_ndjson + "\n"
+
+            send_to_chatgpt(
+                all_snapshots_text,
+                scenario="full_run",
+                chunk_size=500,  # adjust if needed
+                dry_run=args.dry_run,
+                logger=log,
+            )
 
 
 # -----------------------------
