@@ -116,7 +116,7 @@ def main():
         log.info(f"=== Running scenario: {sc['name']} ===")
 
         # Capture network/system state
-        state = capture.capture_network_state()
+        state = capture.capture_network_state(dry_run=args.dry_run)
         sc["state"] = state
 
         # Docker management
