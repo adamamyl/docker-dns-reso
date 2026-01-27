@@ -17,6 +17,7 @@ server=1.1.1.1
 """
 
 
+# [CURRENT]
 def is_running(log=None):
     log = log or logmod.log
     res = subprocess.run(["pgrep", "-f", "dnsmasq"], capture_output=True, text=True)
@@ -28,6 +29,7 @@ def is_running(log=None):
         return False
 
 
+# [CURRENT]
 def create_config(
     cfg_path: str = "/usr/local/etc/dnsmasq.conf",
     content: str = DEFAULT_CONFIG,
@@ -47,6 +49,7 @@ def create_config(
     return cfg_file
 
 
+# [CURRENT]
 def start_dnsmasq(log=None, dry_run=False):
     log = log or logmod.log
     dns_bin = command_path("dnsmasq")
@@ -58,11 +61,13 @@ def start_dnsmasq(log=None, dry_run=False):
 
 
 # --- helpers for orchestrator ---
+# [CURRENT]
 def ensure_config(log=None, dry_run=False):
     log = log or logmod.log
     return create_config(log=log, dry_run=dry_run)
 
 
+# [CURRENT]
 def restart_service(log=None, dry_run=False):
     log = log or logmod.log
     if is_running(log=log):

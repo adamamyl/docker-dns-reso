@@ -9,6 +9,7 @@ from modules import capture
 import modules.logger as logmod
 
 
+# [CURRENT]
 def capture_network_state(
     log: Optional[logmod.Logger] = None, dry_run: bool = False
 ) -> Dict[str, Any]:
