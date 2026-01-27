@@ -9,11 +9,12 @@ Capture network and system state on macOS for net-tester.
 """
 
 import json
-import subprocess
 from pathlib import Path
+from typing import Dict
 
 import modules.logger as logmod
 from modules.install_utils import command_path, get_brew_prefix, run_cmd
+
 
 def capture_processes() -> str:
     """
@@ -21,9 +22,7 @@ def capture_processes() -> str:
     Each line is a JSON object describing a single process.
     """
     try:
-        output = (
-            run_cmd(["ps", "-axo", "pid,ppid,uid,gid,comm"]).stdout.strip().splitlines()
-        )
+        output = run_cmd(["ps", "-axo", "pid,ppid,uid,gid,comm"]).stdout.strip().splitlines()
     except Exception:
         return ""
 
@@ -32,9 +31,11 @@ def capture_processes() -> str:
         parts = line.strip().split(None, 4)
         if len(parts) != 5:
             continue
+
         pid, ppid, uid, gid, comm = parts
         if not pid.isdigit() or not uid.isdigit():
             continue
+
         proc_dict = {
             "pid": int(pid),
             "ppid": int(ppid),
@@ -44,13 +45,15 @@ def capture_processes() -> str:
             "is_root": int(uid) == 0,
         }
         ndjson_lines.append(json.dumps(proc_dict))
+
     return "\n".join(ndjson_lines)
 
 
-def capture_dns_summary() -> dict:
+def capture_dns_summary() -> Dict[str, Dict]:
     """
     Capture a compact DNS summary for diffing snapshots.
-    Summarizes per resolver/interface info, reducing the full scutil --dns output (~100 lines) to a digestible structure.
+    Summarizes per resolver/interface info, reducing the full scutil --dns output (~100 lines)
+    to a digestible structure.
     """
     dns_summary = {}
     try:
@@ -67,27 +70,29 @@ def capture_dns_summary() -> dict:
         elif current_iface:
             if line.startswith("nameserver["):
                 dns_summary[current_iface].setdefault("nameservers", []).append(
-                    line.split(":")[1].strip()
+                    line.split(":", 1)[1].strip()
                 )
             elif line.startswith("search domain["):
                 dns_summary[current_iface].setdefault("search_domains", []).append(
-                    line.split(":")[1].strip()
+                    line.split(":", 1)[1].strip()
                 )
             elif line.startswith("interface:"):
-                dns_summary[current_iface]["interface"] = line.split(":")[1].strip()
+                dns_summary[current_iface]["interface"] = line.split(":", 1)[1].strip()
+
     return dns_summary
 
 
-def capture_network_state() -> dict:
+def capture_network_state() -> Dict[str, object]:
     """
     Capture full network state:
+
     - interfaces
     - addresses
     - routes
     - processes (NDJSON)
     - DNS summary + sample doggo resolution
     """
-    state = {}
+    state: Dict[str, object] = {}
 
     # Determine binaries
     ip_bin = command_path("ip") or f"{get_brew_prefix()}/bin/ip"
@@ -111,10 +116,9 @@ def capture_network_state() -> dict:
     try:
         resolv_conf = Path("/etc/resolv.conf").read_text()
         dns_summary = capture_dns_summary()
+
         if doggo_bin:
-            sample_dns = run_cmd(
-                [doggo_bin, "resolve", "tailscale.com"], check=False
-            ).stdout.strip()
+            sample_dns = run_cmd([doggo_bin, "resolve", "tailscale.com"], check=False).stdout.strip()
     except Exception:
         pass
 
