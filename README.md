@@ -1,6 +1,6 @@
 # docker-dns
 
-Local Docker, Tailscale, VPN DNS routing using dnsmasq & profiles
+Local Docker, Tailscale, VPN DNS routing using dnsmasq & profiles.
 
 ## Features
 - `*.internal` domain
@@ -17,14 +17,15 @@ Local Docker, Tailscale, VPN DNS routing using dnsmasq & profiles
 
 ## Install
 ```bash
-./install.sh
+sudo su
+python3 install.py
 ```
 
 ## Use
 
 ### Manual refresh:
 ```bash
-docker-dns-updater.sh
+docker-dns-updater.py
 ```
 
 ### Test hostname:
@@ -42,7 +43,7 @@ Returns:
 " https://github.com/adamamyl/docker-dns-reso/blob/main/README.md "
 ```
 
-## Flags for `docker-dns-updater.sh`:
+## Flags for `docker-dns-updater.py`:
 - `--debug`            Enable bash tracing for troubleshooting
 - `--quiet`            Suppress normal output
 - `--dry-run`          Show the DNS configuration that would be applied, without writing
@@ -57,58 +58,36 @@ Returns:
 
 ## macOS Resolver Setup
 - Uses `/etc/resolver/*.internal` to point `*.internal` to local dnsmasq
-- Dynamic entries handled by `docker-dns-updater.sh`
+- Dynamic entries handled by `docker-dns-updater.py` (and system timer)
 
 ## Example Workflow
 ```bash
 # Install everything
-./install.sh
+python3 /install.py
 
 # Add a new container
 docker run -d --name api nginx
 
 # Refresh DNS for new container
-docker-dns-updater.sh --force
+python3 docker-dns-updater.py --force
 
 # Test DNS resolution
 ping api.internal
 dig txt help.internal
 ```
 
+## Quick Reference
+
+### install.py
+```
+--config=<docker|quad9|plain|all>   # What to install (default=all)
+--update-profile                    # Re-download Quad9 profile (macOS only)
+```
+
 ## Notes
 - **Tailscale**: dynamic internal resolution always first
 - **Quad9 DNS over TLS**: preferred fallback, supports IPv4/IPv6/HTTPS/TLS
 - **Cloudflare Families**: secondary fallback (1.1.1.2, 1.0.0.2, etc.) if Quad9 is blocked
+- DHCP/system-assigned DNS servers can be optionally included as fallback  
 - Config is idempotent: running multiple times won’t duplicate entries
 - Config changes automatically reload `dnsmasq`
-
-
-## Quick Reference
-
-### install.sh
-```
---config=<docker|quad9|plain|all>    # What to install (default=all)
---update-profile                      # Re-download Quad9 profile (macOS only)
-```
-
-### docker-dns-updater.sh
-```
---debug           # Enable bash trace logging
---quiet           # Suppress normal output
---dry-run         # Show DNS changes without writing
---force           # Apply DNS changes even if unchanged
---update-profile  # Download/apply Quad9 profile (macOS only)
---use-system-dns  # Include system/DHCP-assigned DNS servers as fallback
-```
-
-### TXT Record
-```
-help.internal => "https://github.com/adamamyl/docker-dns-reso/blob/main/README.md"
-```
-
-### Notes
-- Tailscale entries are always first in resolution  
-- Quad9 DNS over TLS is preferred fallback  
-- Cloudflare Families DNS is secondary fallback if Quad9 is blocked  
-- DHCP/system-assigned DNS servers can be optionally included as fallback  
-- Running updater multiple times is safe and idempotent
