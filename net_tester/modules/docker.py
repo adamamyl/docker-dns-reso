@@ -9,7 +9,6 @@ import modules.logger as logmod
 from modules.install_utils import command_path
 
 
-# [CURRENT]
 def is_running(log=None):
     """
     Check if the Docker daemon is running.
@@ -30,7 +29,6 @@ def is_running(log=None):
         return False
 
 
-# [CURRENT]
 def wait_for_docker(timeout=45, log=None, dry_run=False):
     """
     Waits for the Docker daemon to start for up to `timeout` seconds.

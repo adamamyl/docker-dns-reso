@@ -8,7 +8,7 @@ import argparse
 
 # ------------------------------------------------------------------
 # Universal Installer for docker-dns (Python Edition)
-# RESTORED: Quad9, Collision Logic, CLI Flags, System DNS Fallback
+# Universal Installer for docker-dns
 # ------------------------------------------------------------------
 
 UPDATER_SCRIPT_CONTENT = r"""#!/usr/bin/env python3
@@ -29,14 +29,14 @@ def main():
     os_type = platform.system()
     docker_env = os.environ.copy()
     
-    # 1. FIX: Access Docker Socket as root
+    # 1. Access Docker Socket as root
     if os_type == "Darwin":
         user = os.environ.get("SUDO_USER") or os.getlogin()
         socket_path = os.path.join("/Users", user, ".docker/run/docker.sock")
         if os.path.exists(socket_path):
             docker_env["DOCKER_HOST"] = "unix://" + socket_path
 
-    # 2. RESTORE: Path Detection
+    # 2. Path Detection
     dns_file = "/etc/dnsmasq.d/docker-hosts.conf"
     if os_type == "Darwin":
         if os.path.exists("/opt/homebrew/etc/dnsmasq.d"):
@@ -44,12 +44,12 @@ def main():
         else:
             dns_file = "/usr/local/etc/dnsmasq.d/docker-hosts.conf"
 
-    # 3. RESTORE: Quad9 Profile Logic
+    # 3. Quad9 Profile Logic
     if "--update-profile" in sys.argv and os_type == "Darwin":
         url = "https://docs.quad9.net/assets/mobileconfig/Quad9_Secured_DNS_over_TLS_20260119.mobileconfig"
         subprocess.run(["open", "-a", "Safari", url])
 
-    # 4. RESTORE: Collision Safe Hostnames
+    # 4. Collision-safe Hostnames
     containers = get_containers(docker_env)
     seen_names = {}
     output_lines = []
@@ -74,7 +74,7 @@ def main():
                 if ip6: output_lines.append("address=/" + host + "/" + ip6)
         except: continue
 
-    # 5. RESTORE: System DNS Fallback
+    # 5. System DNS Fallback
     if "--use-system-dns" in sys.argv:
         try:
             if os_type == "Darwin":
@@ -96,7 +96,7 @@ def main():
     with open(dns_file, "w") as f:
         f.write(new_content)
 
-    # 6. RESTORE: Force Reload
+    # 6. Force Reload
     if os_type == "Darwin":
         subprocess.run(["launchctl", "kickstart", "-k", "system/homebrew.mxcl.dnsmasq"], check=False)
     else:

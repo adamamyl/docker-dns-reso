@@ -15,7 +15,6 @@ from typing import List
 import modules.logger as logmod
 
 
-# [CURRENT]
 def run_cmd(cmd_list: List[str], dry_run: bool = False, check: bool = True, capture_output: bool = True):
     """
     Run a system command.
@@ -31,13 +30,11 @@ def run_cmd(cmd_list: List[str], dry_run: bool = False, check: bool = True, capt
     return subprocess.run(cmd_list, check=check, capture_output=capture_output, text=True)
 
 
-# [CURRENT]
 def command_path(name: str):
     """Return full path of a command, or None if not found."""
     return shutil.which(name)
 
 
-# [CURRENT]
 def get_brew_prefix() -> str:
     """Return the Homebrew installation prefix for Intel or Apple Silicon macOS."""
     try:
@@ -60,7 +57,6 @@ COMMON_APPS = {
 }
 
 
-# [CURRENT]
 def command_exists(cmd_name: str) -> bool:
     """
     Check if a command exists in PATH.
@@ -69,7 +65,6 @@ def command_exists(cmd_name: str) -> bool:
     return shutil.which(cmd_name) is not None
 
 
-# [CURRENT]
 def get_version(cmd_list) -> str:
     """
     Run a command list and return stdout as version string.
@@ -82,7 +77,6 @@ def get_version(cmd_list) -> str:
         return "unknown"
 
 
-# [CURRENT]
 def check_apps(apps=None) -> dict:
     """
     Check if apps are installed and get their versions.
@@ -104,7 +98,6 @@ def check_apps(apps=None) -> dict:
     return results
 
 
-# [CURRENT]
 def install_hint(app_name: str) -> str:
     """
     Return a simple hint for installing a missing app.

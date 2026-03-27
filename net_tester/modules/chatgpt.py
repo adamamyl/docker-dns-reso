@@ -14,28 +14,22 @@ import modules.logger as logmod
 
 # Define a Protocol so mypy knows what methods a logger has
 class LoggerProtocol(Protocol):
-    # [CURRENT]
     def info(self, msg: str) -> None:
         ...
-        # [CURRENT]
 
     def warning(self, msg: str) -> None:
         ...
-        # [CURRENT]
 
     def error(self, msg: str) -> None:
         ...
-        # [CURRENT]
 
     def success(self, msg: str) -> None:
         ...
-        # [CURRENT]
 
     def bell(self) -> None: ...
 
 
 # Lazy access to avoid circular import issues
-# [CURRENT]
 def get_logger() -> LoggerProtocol:
     return logmod.log
 
@@ -43,7 +37,6 @@ def get_logger() -> LoggerProtocol:
 MAX_POSTS = 10  # safety limit on number of chunks
 
 
-# [CURRENT]
 def send_to_chatgpt(
     text: str,
     scenario: str = "",

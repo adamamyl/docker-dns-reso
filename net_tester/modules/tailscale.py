@@ -12,7 +12,6 @@ from modules.install_utils import command_path
 import modules.logger
 
 
-# [CURRENT]
 def run_tailscale_module(logger=None, force=True, dry_run=False):
     """
     Checks Tailscale GUI/daemon, ensures tailscaled is running, and pings reachable tailnet devices.
