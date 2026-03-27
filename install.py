@@ -31,9 +31,7 @@ def main():
     os.chmod(updater_dst, 0o755)
 
     if os_type == "Darwin":
-        # Ensure macOS Resolver directory exists
-        if not os.path.exists("/etc/resolver"):
-            os.makedirs("/etc/resolver")
+        os.makedirs("/etc/resolver", exist_ok=True)
 
         # Install the .internal resolver
         res_src = os.path.join(repo_root, "macos", "resolver", "docker.internal")
