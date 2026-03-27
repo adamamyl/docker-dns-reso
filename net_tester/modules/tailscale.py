@@ -7,7 +7,6 @@ Uses logger and install_utils.command_path for robust binary resolution.
 import json
 import time
 import subprocess
-from typing import Any
 
 from modules.install_utils import command_path
 import modules.logger
@@ -23,7 +22,6 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
     log.module_start("Tailscale")
 
     # --- Locate binaries ---
-    ip_bin = command_path("ip")
     doggo_bin = command_path("doggo")
     tailscale_bin = command_path("tailscale")
     tailscaled_bin = command_path("tailscaled")
@@ -71,7 +69,7 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
     if not ts_gui_pids and not tsd_pids:
         log.warn("No Tailscale processes detected.")
         if force:
-            log.info(f"Running: tailscale up --force")
+            log.info("Running: tailscale up --force")
             if not dry_run:
                 subprocess.run([tailscale_bin, "up", "--force"], check=False)
         else:

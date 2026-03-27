@@ -11,12 +11,11 @@ Main orchestrator for net-tester
 
 import argparse
 import json
-import sys
 from datetime import datetime
 from pathlib import Path
 
 # Modules
-from modules import capture, dnsmasq, docker, install_utils
+from modules import capture, dnsmasq, docker
 from modules import logger as logmod
 from modules import tailscale
 

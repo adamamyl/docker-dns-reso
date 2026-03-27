@@ -6,13 +6,10 @@ Supports dry-run, verbose/quiet flags, and limits the number of posts.
 """
 
 import math
-import logging
 
-from pathlib import Path
-from typing import Optional, Any, Protocol
+from typing import Optional, Protocol
 
 import modules.logger as logmod
-from modules.logger import Logger
 
 # Define a Protocol so mypy knows what methods a logger has
 class LoggerProtocol(Protocol):

@@ -10,7 +10,7 @@ Capture network and system state on macOS for net-tester.
 
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 import modules.logger as logmod
 from modules.install_utils import command_path, get_brew_prefix, run_cmd

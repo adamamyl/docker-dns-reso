@@ -5,7 +5,6 @@ import platform
 import subprocess
 import shutil
 import argparse
-import random
 
 # ------------------------------------------------------------------
 # Universal Installer for docker-dns (Python Edition)
@@ -149,9 +148,12 @@ def main():
 
     # 2. Run Initial Trigger
     flags = ["python3", updater_dst]
-    if args.update_profile: flags.append("--update-profile")
-    if args.use_system_dns: flags.append("--use-system-dns")
-    if args.force: flags.append("--force")
+    if args.update_profile:
+        flags.append("--update-profile")
+    if args.use_system_dns:
+        flags.append("--use-system-dns")
+    if args.force:
+        flags.append("--force")
     
     subprocess.run(flags)
     print("Installation complete.")

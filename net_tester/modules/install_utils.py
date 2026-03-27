@@ -12,7 +12,6 @@ import shutil
 import subprocess
 
 from typing import List
-from modules.logger import Logger
 import modules.logger as logmod
 
 # [CURRENT]
