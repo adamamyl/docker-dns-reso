@@ -16,7 +16,6 @@ import modules.logger as logmod
 from modules.install_utils import command_path, get_brew_prefix, run_cmd
 
 
-# [CURRENT]
 def capture_processes(dry_run: bool = False, check: bool = True, capture_output: bool = True) -> str:
     """
     Capture the currently running processes as NDJSON.
@@ -59,7 +58,6 @@ def capture_processes(dry_run: bool = False, check: bool = True, capture_output:
     return "\n".join(ndjson_lines)
 
 
-# [CURRENT]
 def capture_dns_summary(dry_run: bool = False, check: bool = True, capture_output: bool = True) -> Dict[str, Dict]:
     """
     Capture a compact DNS summary for diffing snapshots.
@@ -91,7 +89,6 @@ def capture_dns_summary(dry_run: bool = False, check: bool = True, capture_outpu
     return dns_summary
 
 
-# [CURRENT]
 def doggo_query(
     domain: str = "example.com",
     dry_run: bool = False,
@@ -114,7 +111,6 @@ def doggo_query(
         return {"doggo_output": None}
 
 
-# [CURRENT]
 def capture_network_state(dry_run: bool = False) -> Dict[str, Any]:
     """
     Capture full network state:
