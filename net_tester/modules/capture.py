@@ -66,7 +66,7 @@ def capture_dns_summary(
     Summarizes per resolver/interface info, reducing the full scutil --dns output (~100 lines)
     to a digestible structure.
     """
-    dns_summary = {}
+    dns_summary: Dict[str, Dict] = {}
     try:
         scutil_output = run_cmd(
             ["scutil", "--dns"], dry_run=dry_run, check=check, capture_output=capture_output
@@ -155,7 +155,7 @@ def capture_network_state(dry_run: bool = False) -> Dict[str, Any]:
         dns_summary = capture_dns_summary(dry_run=dry_run)
 
         if doggo_bin:
-            sample_dns = doggo_query("tailscale.com", dry_run=dry_run)["doggo_output"]
+            sample_dns = doggo_query("tailscale.com", dry_run=dry_run)["doggo_output"] or ""
     except Exception:
         pass
 
