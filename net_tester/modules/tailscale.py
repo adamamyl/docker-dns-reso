@@ -20,7 +20,6 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
     log = logger or modules.logger.log
     log.module_start("Tailscale")
 
-    # --- Locate binaries ---
     doggo_bin = command_path("doggo")
     tailscale_bin = command_path("tailscale")
     tailscaled_bin = command_path("tailscaled")
@@ -29,14 +28,12 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
         log.error("Required Tailscale binaries not found. Exiting module.")
         return
 
-    # --- Detect GUI ---
     ts_gui_pids = subprocess.run(["pgrep", "-f", "Tailscale"], capture_output=True, text=True).stdout.strip().split()
     if ts_gui_pids:
         log.info(f"Tailscale GUI detected (PIDs {ts_gui_pids})")
     else:
         log.info("Tailscale GUI not running")
 
-    # --- Detect tailscaled daemon ---
     tsd_pids = subprocess.run(["pgrep", "-f", "tailscaled"], capture_output=True, text=True).stdout.strip().split()
 
     # Start tailscaled non-blocking if not running
@@ -63,11 +60,9 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
             log.warn("Please start Tailscale manually. Exiting module.")
             return
 
-    # --- Tailscale version ---
     ts_version = subprocess.run([tailscale_bin, "version"], capture_output=True, text=True).stdout.strip() or "unknown"
     log.info(f"Tailscale version: {ts_version}")
 
-    # --- Capture status ---
     try:
         ts_status_raw = subprocess.run([tailscale_bin, "status", "--json"], capture_output=True, text=True).stdout
         ts_status = json.loads(ts_status_raw)
@@ -75,11 +70,9 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
         ts_status = {}
         log.warn("Failed to read Tailscale status JSON")
 
-    # --- Normalize peers ---
     peers_raw = ts_status.get("Peer", [])
     peers = list(peers_raw.values()) if isinstance(peers_raw, dict) else peers_raw
 
-    # --- Detect local Tailscale IP ---
     ts_ip = ""
     self_ips = ts_status.get("Self", {}).get("TailscaleIPs", [])
     for ip in self_ips:
@@ -89,7 +82,6 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
 
     log.info(f"Detected Tailscale IP: {ts_ip}")
 
-    # --- Reachable tailnet devices ---
     reachable_devices = [
         (peer.get("HostName"), ip)
         for peer in peers
@@ -101,7 +93,6 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
         log.info("No reachable tailnet devices found. Using placeholder example")
         reachable_devices = [("hendricks", "100.74.101.85")]
 
-    # --- Ping and DNS test ---
     for host, ip in reachable_devices:
         if dry_run:
             log.info(f"[DRY-RUN] Would ping {host} ({ip})")

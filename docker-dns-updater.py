@@ -43,7 +43,6 @@ def main():
     os_type = platform.system()
     docker_env = os.environ.copy()
 
-    # 1. Environment Detection & Docker Socket Fix
     if os_type == "Darwin":
         # Root often cannot find the Docker Desktop socket; check common user paths
         user = os.environ.get("SUDO_USER") or os.getlogin()
@@ -59,11 +58,9 @@ def main():
     else:
         dns_file = "/etc/dnsmasq.d/docker-hosts.conf"
 
-    # 2. Handle Quad9 Profile Flag
     if "--update-profile" in sys.argv:
         apply_quad9_profile()
 
-    # 3. Process Containers
     containers = get_containers(docker_env)
     if not containers:
         log("No running Docker containers detected.")
@@ -72,36 +69,28 @@ def main():
     seen_names = {}
     output_lines = []
 
-    for container_id in containers:
+    if containers:
         try:
-            inspect_json = subprocess.check_output(["docker", "inspect", container_id], text=True, env=docker_env)
-            data = json.loads(inspect_json)[0]
+            inspect_json = subprocess.check_output(["docker", "inspect"] + containers, text=True, env=docker_env)
+            for data in json.loads(inspect_json):
+                name = data["Name"].lstrip("/")
+                networks = data.get("NetworkSettings", {}).get("Networks", {})
 
-            name = data["Name"].lstrip("/")
-            networks = data.get("NetworkSettings", {}).get("Networks", {})
+                for net_name, net_data in networks.items():
+                    ip4 = net_data.get("IPAddress")
+                    ip6 = net_data.get("GlobalIPv6Address")
 
-            for net_name, net_data in networks.items():
-                ip4 = net_data.get("IPAddress")
-                ip6 = net_data.get("GlobalIPv6Address")
+                    # Collision handling: if name exists, append network as subdomain
+                    host = name + ("." + net_name + ".internal" if name in seen_names else ".internal")
+                    seen_names[name] = True
 
-                # Default hostname
-                host = name + ".internal"
-
-                # Collision handling: if name exists, append network as subdomain
-                if name in seen_names:
-                    host = name + "." + net_name + ".internal"
-
-                seen_names[name] = True
-
-                if ip4 and ip4 != "":
-                    output_lines.append("address=/" + host + "/" + ip4)
-                if ip6 and ip6 != "":
-                    output_lines.append("address=/" + host + "/" + ip6)
+                    if ip4 and ip4 != "":
+                        output_lines.append("address=/" + host + "/" + ip4)
+                    if ip6 and ip6 != "":
+                        output_lines.append("address=/" + host + "/" + ip6)
         except Exception as e:
-            log("Error inspecting container " + container_id + ": " + str(e))
-            continue
+            log("Error inspecting containers: " + str(e))
 
-    # 4. Handle System DNS Fallback Flag
     if "--use-system-dns" in sys.argv:
         log("Adding system/DHCP DNS servers as fallback...")
         try:
@@ -127,18 +116,18 @@ def main():
         except Exception:
             pass
 
-    # 5. Self-documenting TXT record
     output_lines.append('txt-record=help.internal,"https://github.com/adamamyl/docker-dns-reso"')
-
-    # 6. Write Configuration & Reload
     new_content = "\n".join(output_lines) + "\n"
 
     # Check if update is actually needed unless --force is passed
-    if os.path.exists(dns_file) and "--force" not in sys.argv:
-        with open(dns_file, "r") as f:
-            if f.read() == new_content:
-                log("No changes detected. Skipping reload.")
-                return
+    if "--force" not in sys.argv:
+        try:
+            with open(dns_file) as f:
+                if f.read() == new_content:
+                    log("No changes detected. Skipping reload.")
+                    return
+        except FileNotFoundError:
+            pass
 
     try:
         with open(dns_file, "w") as f:

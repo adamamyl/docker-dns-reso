@@ -105,7 +105,7 @@ def doggo_query(
             check=check,
             capture_output=capture_output,
         )
-        return {"doggo_output": result.stdout.decode()}
+        return {"doggo_output": result.stdout}
     except FileNotFoundError:
         logmod.get_logger().warning("Doggo not installed, skipping DNS query")
         return {"doggo_output": None}

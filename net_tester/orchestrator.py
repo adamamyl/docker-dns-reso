@@ -91,7 +91,6 @@ def main():
 
     # Configure logger
     log = logmod.configure_logger(quiet=args.quiet, verbose=args.verbose, debug=args.debug)
-    log_module_start = log.module_start
 
     scenarios = [
         {"name": "pom"},
@@ -114,7 +113,7 @@ def main():
 
         # Docker management
         if "docker" in sc["name"]:
-            log_module_start("Docker")
+            log.module_start("Docker")
             if docker.wait_for_docker(timeout=30, log=log):
                 log.success("Docker daemon running")
             else:
@@ -123,14 +122,14 @@ def main():
 
         # DNSMasq management
         if "dnsmasq" in sc["name"]:
-            log_module_start("DNSMasq")
+            log.module_start("DNSMasq")
             dnsmasq.ensure_config(log=log, dry_run=args.dry_run)
             dnsmasq.restart_service(log=log, dry_run=args.dry_run)
             sc["dnsmasq"] = True
 
         # Tailscale management
         if "tailscale" in sc["name"]:
-            log_module_start("Tailscale")
+            log.module_start("Tailscale")
             tailscale.run_tailscale_module(logger=log, force=args.force, dry_run=args.dry_run)
             sc["tailscale"] = True
 
