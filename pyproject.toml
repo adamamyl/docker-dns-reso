@@ -1,0 +1,45 @@
+[project]
+name = "docker-dns-reso"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "bandit",
+    "mypy",
+    "pip-audit",
+    "pre-commit",
+    "rich",
+    "ruff",
+]
+
+[tool.bandit]
+targets = ["."]
+exclude_dirs = [".venv", "net_tester/.venv"]
+skips = [
+    "B103",  # chmod 0o755: installer sets executable permissions intentionally
+    "B603",  # subprocess calls with list args are safe
+    "B607",  # starting a process with a partial path (resolved via command_path/which)
+]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+explicit_package_bases = true
+exclude = ["^\\.venv/", "^net_tester/\\.venv/"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+exclude = [".venv", "net_tester/.venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "S"]
+ignore = [
+    "S603",  # subprocess calls with list args are safe
+    "S607",  # starting a process with a partial path
+    "S110",  # try-except-pass: intentional in network/diagnostic tools
+    "S103",  # chmod permissive mask: installer sets executable permissions intentionally
+    "B904",  # raise-without-from-inside-except: style only, not a security issue here
+]

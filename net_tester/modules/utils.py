@@ -25,8 +25,6 @@ def get_brew_prefix():
     import subprocess
 
     try:
-        return subprocess.run(
-            ["brew", "--prefix"], capture_output=True, text=True, check=True
-        ).stdout.strip()
+        return subprocess.run(["brew", "--prefix"], capture_output=True, text=True, check=True).stdout.strip()
     except Exception:
         return "/usr/local"

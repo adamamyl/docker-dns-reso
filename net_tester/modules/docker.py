@@ -9,7 +9,6 @@ import modules.logger as logmod
 from modules.install_utils import command_path
 
 
-
 # [CURRENT]
 def is_running(log=None):
     """
@@ -19,14 +18,10 @@ def is_running(log=None):
     log = log or logmod.log
     docker_bin = command_path("docker")
     if not docker_bin:
-        log.error(
-            "Docker binary not found. Install Docker via Homebrew or official installer."
-        )
+        log.error("Docker binary not found. Install Docker via Homebrew or official installer.")
         return False
 
-    res = subprocess.run(
-        [docker_bin, "info"], capture_output=True, text=True, check=False
-    )
+    res = subprocess.run([docker_bin, "info"], capture_output=True, text=True, check=False)
     if res.returncode == 0:
         log.success("Docker daemon is running")
         return True
