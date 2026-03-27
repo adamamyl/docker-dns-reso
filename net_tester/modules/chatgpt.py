@@ -11,17 +11,26 @@ from typing import Optional, Protocol
 
 import modules.logger as logmod
 
+
 # Define a Protocol so mypy knows what methods a logger has
 class LoggerProtocol(Protocol):
-# [CURRENT]
-    def info(self, msg: str) -> None: ...
-# [CURRENT]
-    def warning(self, msg: str) -> None: ...
-# [CURRENT]
-    def error(self, msg: str) -> None: ...
-# [CURRENT]
-    def success(self, msg: str) -> None: ...
-# [CURRENT]
+    # [CURRENT]
+    def info(self, msg: str) -> None:
+        ...
+        # [CURRENT]
+
+    def warning(self, msg: str) -> None:
+        ...
+        # [CURRENT]
+
+    def error(self, msg: str) -> None:
+        ...
+        # [CURRENT]
+
+    def success(self, msg: str) -> None:
+        ...
+        # [CURRENT]
+
     def bell(self) -> None: ...
 
 
@@ -29,6 +38,7 @@ class LoggerProtocol(Protocol):
 # [CURRENT]
 def get_logger() -> LoggerProtocol:
     return logmod.log
+
 
 MAX_POSTS = 10  # safety limit on number of chunks
 
@@ -70,20 +80,20 @@ def send_to_chatgpt(
             chunk_text = "\n".join(instructions + chunk_lines)
 
         if dry_run:
-            log.info(f"[DRY-RUN] Would send chunk {idx+1} of {total_chunks} to ChatGPT")
+            log.info(f"[DRY-RUN] Would send chunk {idx + 1} of {total_chunks} to ChatGPT")
         else:
             # Here we just copy to clipboard and ask the user to paste
             try:
                 import subprocess
+
                 subprocess.run(["pbcopy"], input=chunk_text.encode(), check=True)
-                log.success(f"Chunk {idx+1} of {total_chunks} copied to clipboard")
+                log.success(f"Chunk {idx + 1} of {total_chunks} copied to clipboard")
             except Exception:
-                log.warning(f"Failed to copy chunk {idx+1} to clipboard")
+                log.warning(f"Failed to copy chunk {idx + 1} to clipboard")
 
         # ⚡ Always ring bell and wait for user before next chunk
         log.bell()
-        input(f"{logmod.YELLOW}Paste chunk {idx+1} into ChatGPT and press Enter for next...{logmod.RESET}")
-
+        input(f"{logmod.YELLOW}Paste chunk {idx + 1} into ChatGPT and press Enter for next...{logmod.RESET}")
 
     log.info(f"All {total_chunks} chunks for scenario '{scenario}' processed")
     log.bell()

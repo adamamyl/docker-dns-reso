@@ -11,7 +11,7 @@ import argparse
 # RESTORED: Quad9, Collision Logic, CLI Flags, System DNS Fallback
 # ------------------------------------------------------------------
 
-UPDATER_SCRIPT_CONTENT = r'''#!/usr/bin/env python3
+UPDATER_SCRIPT_CONTENT = r"""#!/usr/bin/env python3
 import json
 import subprocess
 import sys
@@ -104,7 +104,8 @@ def main():
 
 if __name__ == "__main__":
     main()
-'''
+"""
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -130,7 +131,7 @@ def main():
         # Ensure macOS Resolver directory exists
         if not os.path.exists("/etc/resolver"):
             os.makedirs("/etc/resolver")
-        
+
         # Install the .internal resolver
         res_src = os.path.join(repo_root, "macos", "resolver", "docker.internal")
         if os.path.exists(res_src):
@@ -154,9 +155,10 @@ def main():
         flags.append("--use-system-dns")
     if args.force:
         flags.append("--force")
-    
+
     subprocess.run(flags)
     print("Installation complete.")
+
 
 if __name__ == "__main__":
     main()

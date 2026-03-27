@@ -1,0 +1,47 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.8
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.5
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml", "-ll", "-ii"]  # medium+ severity, high confidence only
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.15.0
+    hooks:
+      - id: mypy
+        args:
+          - --ignore-missing-imports
+          - --explicit-package-bases
+        files: ^(docker-dns-updater\.py|install\.py|net_tester/)
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-json
+      - id: check-added-large-files
+      - id: detect-private-key
+      - id: no-commit-to-branch
+        args: [--branch, main]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.3
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: pip-audit
+        name: pip-audit
+        entry: .venv/bin/pip-audit
+        language: system
+        # CVE-2026-4539 (pygments): no fix released yet — revisit when pygments >2.19.2 ships
+        args: [--ignore-vuln, CVE-2026-4539]
+        pass_filenames: false
+        always_run: true

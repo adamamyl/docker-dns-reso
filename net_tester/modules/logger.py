@@ -23,51 +23,50 @@ BELL = "\a"  # terminal bell
 
 
 class Logger:
-# [CURRENT]
+    # [CURRENT]
     def __init__(self, *, quiet=False, verbose=False, debug=False):
         self.quiet = quiet
         self.verbose = verbose
         self.debug_enabled = debug
 
     # --- core output ---
-# [CURRENT]
+    # [CURRENT]
     def _emit(self, msg):
         sys.stdout.write(msg + "\n")
 
     # --- levels ---
-# [CURRENT]
+    # [CURRENT]
     def info(self, msg):
         if self.quiet:
             return
         self._emit(f"{BOLD}{BLUE}{INFO} {msg}{RESET}")
 
-# [CURRENT]
+    # [CURRENT]
     def success(self, msg):
         if self.quiet:
             return
         self._emit(f"{BOLD}{GREEN}{OK} {msg}{RESET}")
 
-# [CURRENT]
+    # [CURRENT]
     def warn(self, msg):
         self._emit(f"{BOLD}{YELLOW}{WARN} {msg}{RESET}")
 
-# [CURRENT]
+    # [CURRENT]
     def error(self, msg):
         self._emit(f"{BOLD}{RED}{ERR} {msg}{RESET}")
 
-# [CURRENT]
+    # [CURRENT]
     def debug(self, msg):
         if not self.debug_enabled:
             return
         self._emit(f"{MAGENTA}{DEBUG} {msg}{RESET}")
-    
-# [CURRENT]
+
+    # [CURRENT]
     def bell(self):
         sys.stdout.write(BELL + "\n")
 
-
     # --- structure ---
-# [CURRENT]
+    # [CURRENT]
     def module_start(self, name: str):
         if self.quiet:
             return
@@ -80,6 +79,8 @@ class Logger:
 
 # Create a default logger instance
 log = Logger()
+
+
 # [CURRENT]
 def configure_logger(*, quiet=False, verbose=False, debug=False) -> Logger:
     return Logger(quiet=quiet, verbose=verbose, debug=debug)

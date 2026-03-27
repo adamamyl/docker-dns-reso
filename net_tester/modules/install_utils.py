@@ -14,6 +14,7 @@ import subprocess
 from typing import List
 import modules.logger as logmod
 
+
 # [CURRENT]
 def run_cmd(cmd_list: List[str], dry_run: bool = False, check: bool = True, capture_output: bool = True):
     """
@@ -29,21 +30,18 @@ def run_cmd(cmd_list: List[str], dry_run: bool = False, check: bool = True, capt
         return subprocess.CompletedProcess(cmd_list, 0, stdout="", stderr="")
     return subprocess.run(cmd_list, check=check, capture_output=capture_output, text=True)
 
+
 # [CURRENT]
 def command_path(name: str):
     """Return full path of a command, or None if not found."""
     return shutil.which(name)
 
+
 # [CURRENT]
 def get_brew_prefix() -> str:
     """Return the Homebrew installation prefix for Intel or Apple Silicon macOS."""
     try:
-        result = subprocess.run(
-            ["brew", "--prefix"],
-            capture_output=True,
-            text=True,
-            check=True
-        )
+        result = subprocess.run(["brew", "--prefix"], capture_output=True, text=True, check=True)
         prefix = result.stdout.strip()
         if not prefix:
             raise RuntimeError("Brew returned empty prefix")
@@ -60,6 +58,7 @@ COMMON_APPS = {
     "dnsmasq": ["dnsmasq", "--version"],
     "ip": ["ip", "-V"],  # iproute2mac on macOS
 }
+
 
 # [CURRENT]
 def command_exists(cmd_name: str) -> bool:

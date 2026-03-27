@@ -37,9 +37,7 @@ BASE_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
 # -----------------------------
 def parse_args():
     parser = argparse.ArgumentParser(description="Net-tester orchestrator")
-    parser.add_argument(
-        "--dry-run", action="store_true", help="Do not execute external commands"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="Do not execute external commands")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
     parser.add_argument("--quiet", action="store_true", help="Minimal logging")
     parser.add_argument("--debug", action="store_true", help="Debug logging")
@@ -74,9 +72,7 @@ def save_snapshot(name, state, stage="after"):
     processes_ndjson = state.pop("processes", "")
     file.write_text(json.dumps(state, indent=2))
     if processes_ndjson:
-        (path / f"{RUN_ID}_{name}_{stage}_processes.ndjson").write_text(
-            processes_ndjson
-        )
+        (path / f"{RUN_ID}_{name}_{stage}_processes.ndjson").write_text(processes_ndjson)
     return file
 
 
@@ -94,9 +90,7 @@ def main():
         BASE_SNAPSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
     # Configure logger
-    log = logmod.configure_logger(
-        quiet=args.quiet, verbose=args.verbose, debug=args.debug
-    )
+    log = logmod.configure_logger(quiet=args.quiet, verbose=args.verbose, debug=args.debug)
     log_module_start = log.module_start
 
     scenarios = [
@@ -137,9 +131,7 @@ def main():
         # Tailscale management
         if "tailscale" in sc["name"]:
             log_module_start("Tailscale")
-            tailscale.run_tailscale_module(
-                logger=log, force=args.force, dry_run=args.dry_run
-            )
+            tailscale.run_tailscale_module(logger=log, force=args.force, dry_run=args.dry_run)
             sc["tailscale"] = True
 
         # Save snapshot

@@ -31,22 +31,14 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
         return
 
     # --- Detect GUI ---
-    ts_gui_pids = (
-        subprocess.run(["pgrep", "-f", "Tailscale"], capture_output=True, text=True)
-        .stdout.strip()
-        .split()
-    )
+    ts_gui_pids = subprocess.run(["pgrep", "-f", "Tailscale"], capture_output=True, text=True).stdout.strip().split()
     if ts_gui_pids:
         log.info(f"Tailscale GUI detected (PIDs {ts_gui_pids})")
     else:
         log.info("Tailscale GUI not running")
 
     # --- Detect tailscaled daemon ---
-    tsd_pids = (
-        subprocess.run(["pgrep", "-f", "tailscaled"], capture_output=True, text=True)
-        .stdout.strip()
-        .split()
-    )
+    tsd_pids = subprocess.run(["pgrep", "-f", "tailscaled"], capture_output=True, text=True).stdout.strip().split()
 
     # Start tailscaled non-blocking if not running
     if not tsd_pids:
@@ -59,11 +51,7 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
             )
             time.sleep(5)
             tsd_pids = (
-                subprocess.run(
-                    ["pgrep", "-f", "tailscaled"], capture_output=True, text=True
-                )
-                .stdout.strip()
-                .split()
+                subprocess.run(["pgrep", "-f", "tailscaled"], capture_output=True, text=True).stdout.strip().split()
             )
 
     if not ts_gui_pids and not tsd_pids:
@@ -77,19 +65,12 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
             return
 
     # --- Tailscale version ---
-    ts_version = (
-        subprocess.run(
-            [tailscale_bin, "version"], capture_output=True, text=True
-        ).stdout.strip()
-        or "unknown"
-    )
+    ts_version = subprocess.run([tailscale_bin, "version"], capture_output=True, text=True).stdout.strip() or "unknown"
     log.info(f"Tailscale version: {ts_version}")
 
     # --- Capture status ---
     try:
-        ts_status_raw = subprocess.run(
-            [tailscale_bin, "status", "--json"], capture_output=True, text=True
-        ).stdout
+        ts_status_raw = subprocess.run([tailscale_bin, "status", "--json"], capture_output=True, text=True).stdout
         ts_status = json.loads(ts_status_raw)
     except Exception:
         ts_status = {}
@@ -135,9 +116,7 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
         # DNS resolution via doggo
         test_fqdn = f"{host}.ts.net"
         try:
-            out = subprocess.run(
-                [doggo_bin, "query", test_fqdn], capture_output=True, text=True
-            ).stdout.strip()
+            out = subprocess.run([doggo_bin, "query", test_fqdn], capture_output=True, text=True).stdout.strip()
             if out:
                 log.success(f"DNS resolution success: {test_fqdn} -> {out}")
             else:

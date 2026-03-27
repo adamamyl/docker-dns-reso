@@ -17,20 +17,22 @@ from modules.install_utils import command_path, get_brew_prefix, run_cmd
 
 
 # [CURRENT]
-def capture_processes(
-    dry_run: bool = False, check: bool = True, capture_output: bool = True
-) -> str:
+def capture_processes(dry_run: bool = False, check: bool = True, capture_output: bool = True) -> str:
     """
     Capture the currently running processes as NDJSON.
     Each line is a JSON object describing a single process.
     """
     try:
-        output = run_cmd(
-            ["ps", "-axo", "pid,ppid,uid,gid,comm"],
-            dry_run=dry_run,
-            check=check,
-            capture_output=capture_output,
-        ).stdout.strip().splitlines()
+        output = (
+            run_cmd(
+                ["ps", "-axo", "pid,ppid,uid,gid,comm"],
+                dry_run=dry_run,
+                check=check,
+                capture_output=capture_output,
+            )
+            .stdout.strip()
+            .splitlines()
+        )
     except Exception:
         return ""
 
@@ -58,9 +60,7 @@ def capture_processes(
 
 
 # [CURRENT]
-def capture_dns_summary(
-    dry_run: bool = False, check: bool = True, capture_output: bool = True
-) -> Dict[str, Dict]:
+def capture_dns_summary(dry_run: bool = False, check: bool = True, capture_output: bool = True) -> Dict[str, Dict]:
     """
     Capture a compact DNS summary for diffing snapshots.
     Summarizes per resolver/interface info, reducing the full scutil --dns output (~100 lines)
@@ -82,13 +82,9 @@ def capture_dns_summary(
             dns_summary[current_iface] = {}
         elif current_iface:
             if line.startswith("nameserver["):
-                dns_summary[current_iface].setdefault("nameservers", []).append(
-                    line.split(":", 1)[1].strip()
-                )
+                dns_summary[current_iface].setdefault("nameservers", []).append(line.split(":", 1)[1].strip())
             elif line.startswith("search domain["):
-                dns_summary[current_iface].setdefault("search_domains", []).append(
-                    line.split(":", 1)[1].strip()
-                )
+                dns_summary[current_iface].setdefault("search_domains", []).append(line.split(":", 1)[1].strip())
             elif line.startswith("interface:"):
                 dns_summary[current_iface]["interface"] = line.split(":", 1)[1].strip()
 
