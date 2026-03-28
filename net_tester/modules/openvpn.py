@@ -92,22 +92,20 @@ def _detect_installed() -> bool:
 
 def _detect_tunnel_active(*, dry_run: bool) -> bool:
     """
-    Return True if an OpenVPN tunnel appears active.
+    Return True if an OpenVPN tunnel is currently connected.
 
-    Checks for openvpn processes — the OpenVPN Connect helper (openvpnstart / openvpn)
-    runs only when a tunnel is established. Uses pgrep for a lightweight process search.
+    Uses `scutil --nc list` which reports macOS VPN service connection state.
+    A line containing both 'openvpn' (case-insensitive) and '(Connected)' means
+    an active tunnel. The app process alone (menu bar icon, no connection) does not
+    produce a Connected entry, avoiding the false-positive from pgrep matching the app.
     """
     if dry_run:
         return False
-    pgrep = command_path("pgrep")
-    if not pgrep:
+    scutil = command_path("scutil")
+    if not scutil:
         return False
-    result = subprocess.run(
-        [pgrep, "-i", "-f", "openvpn"],
-        capture_output=True,
-        check=False,
-    )
-    return result.returncode == 0
+    result = subprocess.run([scutil, "--nc", "list"], capture_output=True, text=True, check=False)
+    return any("(Connected)" in line and "openvpn" in line.lower() for line in result.stdout.splitlines())
 
 
 def _get_vpn_dns_config(*, dry_run: bool) -> tuple[str, bool]:
