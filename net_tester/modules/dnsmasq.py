@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 import modules.logger as logmod
-from modules.install_utils import command_path
+from modules.install_utils import command_path, get_brew_prefix
 
 
 DEFAULT_CONFIG = """\
@@ -29,13 +29,13 @@ def is_running(log=None):
 
 
 def create_config(
-    cfg_path: str = "/usr/local/etc/dnsmasq.conf",
+    cfg_path: str | None = None,
     content: str = DEFAULT_CONFIG,
     log=None,
     dry_run=False,
 ):
     log = log or logmod.log
-    cfg_file = Path(cfg_path)
+    cfg_file = Path(cfg_path) if cfg_path else Path(get_brew_prefix()) / "etc" / "dnsmasq.conf"
     if dry_run:
         log.info(f"[DRY-RUN] Would write dnsmasq config to {cfg_file}")
         log.debug(f"Config content:\n{content}")
