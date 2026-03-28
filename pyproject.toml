@@ -16,7 +16,7 @@ dev = [
 
 [tool.bandit]
 targets = ["."]
-exclude_dirs = [".venv", "net_tester/.venv"]
+exclude_dirs = ["net_tester.venv", ".venv", "net_tester/.venv"]
 skips = [
     "B103",  # chmod 0o755: installer sets executable permissions intentionally
     "B603",  # subprocess calls with list args are safe
@@ -27,12 +27,12 @@ skips = [
 python_version = "3.11"
 ignore_missing_imports = true
 explicit_package_bases = true
-exclude = ["^\\.venv/", "^net_tester/\\.venv/"]
+exclude = ["^net_tester\\.venv/", "^\\.venv/", "^net_tester/\\.venv/"]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 120
-exclude = [".venv", "net_tester/.venv"]
+exclude = ["net_tester.venv", ".venv", "net_tester/.venv"]
 
 [tool.ruff.lint]
 select = ["E", "F", "B", "S"]

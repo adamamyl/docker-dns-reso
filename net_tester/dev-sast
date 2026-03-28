@@ -3,7 +3,7 @@
 set -euo pipefail; IFS=$'\n\t'
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV="${REPO_ROOT}/.venv"
+VENV="${REPO_ROOT}/net_tester.venv"
 
 # Targets: all Python source under net_tester, plus top-level installer scripts
 TARGETS=("${REPO_ROOT}/net_tester" "${REPO_ROOT}/docker-dns-updater.py" "${REPO_ROOT}/install.py")

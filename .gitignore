@@ -210,3 +210,4 @@ __marimo__/
 snapshots/
 logs/
 tmp/
+net_tester.venv/

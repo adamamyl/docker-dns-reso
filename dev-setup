@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# dev-setup — bootstrap the docker-dns-reso development environment
+set -euo pipefail; IFS=$'\n\t'
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV="${REPO_ROOT}/net_tester.venv"
+UV="${HOME}/.local/bin/uv"
+
+if [[ ! -x "${UV}" ]]; then
+  if command -v uv >/dev/null 2>&1; then
+    UV="$(command -v uv)"
+  else
+    echo "ERROR: uv not found. Install: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+    exit 1
+  fi
+fi
+
+"${UV}" venv "${VENV}"
+UV_PROJECT_ENVIRONMENT="${VENV}" "${UV}" sync --group dev --no-install-project
+"${VENV}/bin/pre-commit" install
+echo "Done. Run: cd net_tester && uv run python coordinator.py [--dry-run]"
