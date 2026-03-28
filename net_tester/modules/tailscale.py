@@ -73,6 +73,15 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
     peers_raw = ts_status.get("Peer", [])
     peers = list(peers_raw.values()) if isinstance(peers_raw, dict) else peers_raw
 
+    # Derive the tailnet-specific suffix from Self.DNSName (e.g. "glaedr.otter-mountain.ts.net.")
+    # rather than MagicDNSSuffix, which returns bare "ts.net" when the CLI/daemon versions differ.
+    self_dns_name = ts_status.get("Self", {}).get("DNSName", "").rstrip(".")
+    if self_dns_name and "." in self_dns_name:
+        magic_dns_suffix = ".".join(self_dns_name.split(".")[1:])
+    else:
+        magic_dns_suffix = ts_status.get("MagicDNSSuffix", "ts.net")
+    log.info(f"Tailnet MagicDNS suffix: {magic_dns_suffix}")
+
     ts_ip = ""
     self_ips = ts_status.get("Self", {}).get("TailscaleIPs", [])
     for ip in self_ips:
@@ -82,29 +91,41 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
 
     log.info(f"Detected Tailscale IP: {ts_ip}")
 
+    def _peer_ip(peer: dict) -> str:
+        """Prefer IPv4 Tailscale IP; fall back to first available."""
+        ips = peer.get("TailscaleIPs", [])
+        return next((ip for ip in ips if "." in ip), next(iter(ips), ""))
+
     reachable_devices = [
-        (peer.get("HostName"), ip)
+        (peer.get("HostName", ""), peer.get("DNSName", "").rstrip("."), _peer_ip(peer))
         for peer in peers
-        for ip in peer.get("TailscaleIPs", [])
-        if peer.get("Online") and ip != ts_ip
+        if peer.get("Online")
     ]
 
     if not reachable_devices:
         log.info("No reachable tailnet devices found. Using placeholder example")
-        reachable_devices = [("hendricks", "100.74.101.85")]
+        reachable_devices = [("wolfcraig", "wolfcraig.ts.net", "")]
 
-    for host, ip in reachable_devices:
+    for host, fqdn, ip in reachable_devices:
         if dry_run:
             log.info(f"[DRY-RUN] Would ping {host} ({ip})")
             continue
-        ping_res = subprocess.run([tailscale_bin, "ping", "-c", "1", host], check=False)
+        ping_target = ip if ip else host
+        ping_res = subprocess.run(
+            [tailscale_bin, "ping", "--c", "1", "--until-direct=false", ping_target],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         if ping_res.returncode == 0:
             log.success(f"Ping successful: {host} ({ip})")
         else:
-            log.warn(f"Ping failed: {host} ({ip})")
+            raw = (ping_res.stdout or ping_res.stderr).strip()
+            detail = raw.splitlines()[0] if raw else "no output"
+            log.warn(f"Ping failed: {host} ({ip}): {detail}")
 
-        # DNS resolution via doggo
-        test_fqdn = f"{host}.ts.net"
+        # DNS resolution via doggo using full MagicDNS FQDN from status JSON
+        test_fqdn = fqdn or f"{host}.{magic_dns_suffix}"
         try:
             out = subprocess.run([doggo_bin, "query", test_fqdn], capture_output=True, text=True).stdout.strip()
             if out:

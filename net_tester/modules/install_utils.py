@@ -8,11 +8,18 @@ Provides functions to:
   - Optionally provide installation hints
 """
 
+import functools
+import re
 import shutil
 import subprocess
-
+from pathlib import Path
 from typing import List
+
 import modules.logger as logmod
+
+_DNSMASQ_ADDRESS_RE = re.compile(r"^address=/([^/]+)/([^/]+)")
+
+RESOLVER_DIR = Path("/etc/resolver")
 
 
 def run_cmd(cmd_list: List[str], dry_run: bool = False, check: bool = True, capture_output: bool = True):
@@ -96,6 +103,40 @@ def check_apps(apps=None) -> dict:
             logmod.log.warn(f"{app} not found in PATH")
 
     return results
+
+
+def get_resolver_domains() -> list[str]:
+    """Return domain names found as files under /etc/resolver/."""
+    if not RESOLVER_DIR.exists():
+        return []
+    return [p.name for p in RESOLVER_DIR.iterdir() if p.is_file()]
+
+
+@functools.cache
+def get_dnsmasq_fqdns() -> list[str]:
+    """
+    Return unique FQDNs from dnsmasq address= directives in $(brew --prefix)/etc/dnsmasq.d/*.conf.
+
+    These are real host entries that dnsmasq knows about — suitable for resolution
+    tests where a synthetic probe.* FQDN would give a misleading NXDOMAIN.
+    Returns an empty list if Homebrew or dnsmasq.d are not present.
+    """
+    try:
+        prefix = get_brew_prefix()
+    except RuntimeError:
+        return []
+    conf_dir = Path(prefix) / "etc" / "dnsmasq.d"
+    if not conf_dir.exists():
+        return []
+    seen: set[str] = set()
+    fqdns: list[str] = []
+    for conf_file in sorted(conf_dir.glob("*.conf")):
+        for line in conf_file.read_text().splitlines():
+            m = _DNSMASQ_ADDRESS_RE.match(line.strip())
+            if m and m.group(1) not in seen:
+                seen.add(m.group(1))
+                fqdns.append(m.group(1))
+    return fqdns
 
 
 def install_hint(app_name: str) -> str:
