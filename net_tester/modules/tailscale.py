@@ -73,7 +73,13 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
     peers_raw = ts_status.get("Peer", [])
     peers = list(peers_raw.values()) if isinstance(peers_raw, dict) else peers_raw
 
-    magic_dns_suffix = ts_status.get("MagicDNSSuffix", "ts.net")
+    # Derive the tailnet-specific suffix from Self.DNSName (e.g. "glaedr.otter-mountain.ts.net.")
+    # rather than MagicDNSSuffix, which returns bare "ts.net" when the CLI/daemon versions differ.
+    self_dns_name = ts_status.get("Self", {}).get("DNSName", "").rstrip(".")
+    if self_dns_name and "." in self_dns_name:
+        magic_dns_suffix = ".".join(self_dns_name.split(".")[1:])
+    else:
+        magic_dns_suffix = ts_status.get("MagicDNSSuffix", "ts.net")
     log.info(f"Tailnet MagicDNS suffix: {magic_dns_suffix}")
 
     ts_ip = ""
@@ -85,11 +91,15 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
 
     log.info(f"Detected Tailscale IP: {ts_ip}")
 
+    def _peer_ip(peer: dict) -> str:
+        """Prefer IPv4 Tailscale IP; fall back to first available."""
+        ips = peer.get("TailscaleIPs", [])
+        return next((ip for ip in ips if "." in ip), next(iter(ips), ""))
+
     reachable_devices = [
-        (peer.get("HostName"), peer.get("DNSName", "").rstrip("."), ip)
+        (peer.get("HostName", ""), peer.get("DNSName", "").rstrip("."), _peer_ip(peer))
         for peer in peers
-        for ip in peer.get("TailscaleIPs", [])
-        if peer.get("Online") and ip != ts_ip
+        if peer.get("Online")
     ]
 
     if not reachable_devices:
