@@ -100,11 +100,19 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
         if dry_run:
             log.info(f"[DRY-RUN] Would ping {host} ({ip})")
             continue
-        ping_res = subprocess.run([tailscale_bin, "ping", "-c", "1", host], check=False)
+        ping_target = ip if ip else host
+        ping_res = subprocess.run(
+            [tailscale_bin, "ping", "--c", "1", ping_target],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         if ping_res.returncode == 0:
             log.success(f"Ping successful: {host} ({ip})")
         else:
-            log.warn(f"Ping failed: {host} ({ip})")
+            raw = (ping_res.stdout or ping_res.stderr).strip()
+            detail = raw.splitlines()[0] if raw else "no output"
+            log.warn(f"Ping failed: {host} ({ip}): {detail}")
 
         # DNS resolution via doggo using full MagicDNS FQDN from status JSON
         test_fqdn = fqdn or f"{host}.{magic_dns_suffix}"
