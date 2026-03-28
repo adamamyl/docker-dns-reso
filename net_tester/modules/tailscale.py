@@ -83,7 +83,7 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
     log.info(f"Detected Tailscale IP: {ts_ip}")
 
     reachable_devices = [
-        (peer.get("HostName"), ip)
+        (peer.get("HostName"), peer.get("DNSName", "").rstrip("."), ip)
         for peer in peers
         for ip in peer.get("TailscaleIPs", [])
         if peer.get("Online") and ip != ts_ip
@@ -91,9 +91,9 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
 
     if not reachable_devices:
         log.info("No reachable tailnet devices found. Using placeholder example")
-        reachable_devices = [("hendricks", "100.74.101.85")]
+        reachable_devices = [("hendricks", "hendricks.ts.net", "100.74.101.85")]
 
-    for host, ip in reachable_devices:
+    for host, fqdn, ip in reachable_devices:
         if dry_run:
             log.info(f"[DRY-RUN] Would ping {host} ({ip})")
             continue
@@ -103,8 +103,8 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
         else:
             log.warn(f"Ping failed: {host} ({ip})")
 
-        # DNS resolution via doggo
-        test_fqdn = f"{host}.ts.net"
+        # DNS resolution via doggo using full MagicDNS FQDN from status JSON
+        test_fqdn = fqdn or f"{host}.ts.net"
         try:
             out = subprocess.run([doggo_bin, "query", test_fqdn], capture_output=True, text=True).stdout.strip()
             if out:
