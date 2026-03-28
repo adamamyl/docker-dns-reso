@@ -94,7 +94,7 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
 
     if not reachable_devices:
         log.info("No reachable tailnet devices found. Using placeholder example")
-        reachable_devices = [("hendricks", "hendricks.ts.net", "100.74.101.85")]
+        reachable_devices = [("wolfcraig", "wolfcraig.ts.net", "")]
 
     for host, fqdn, ip in reachable_devices:
         if dry_run:
