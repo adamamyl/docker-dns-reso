@@ -10,10 +10,9 @@ before the /etc/resolver/internal → dnsmasq → 127.0.0.1 path is ever consult
 
 Status matrix:
   warn  — OpenVPN Connect not installed (nothing to test)
-  pass  — OpenVPN inactive + .internal resolves (normal baseline)
+  warn  — OpenVPN installed but no tunnel active (incomplete test — prompt user to connect and re-run)
   pass  — OpenVPN active + .internal resolves (VPN not interfering)
   fail  — OpenVPN active + .internal fails (VPN DNS is blocking .internal resolution)
-  warn  — OpenVPN active + .internal fails but no wildcard (unexpected; check other causes)
   warn  — OpenVPN inactive + .internal fails (not VPN's fault)
 """
 
@@ -72,7 +71,7 @@ def _determine_status(
     if not tunnel_active:
         if not internal_resolves:
             return "warn", "OpenVPN inactive but .internal resolution broken — check other interference"
-        return "pass", "OpenVPN inactive; .internal resolves correctly"
+        return "warn", "OpenVPN installed but no tunnel active — connect and re-run to verify VPN DNS"
     if internal_resolves:
         return "pass", "OpenVPN tunnel active and .internal resolves correctly"
     if wildcard_vpn_dns:
