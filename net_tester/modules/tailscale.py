@@ -112,7 +112,7 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
             continue
         ping_target = ip if ip else host
         ping_res = subprocess.run(
-            [tailscale_bin, "ping", "--c", "1", ping_target],
+            [tailscale_bin, "ping", "--c", "1", "--until-direct=false", ping_target],
             capture_output=True,
             text=True,
             check=False,
