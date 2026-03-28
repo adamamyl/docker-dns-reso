@@ -73,6 +73,9 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
     peers_raw = ts_status.get("Peer", [])
     peers = list(peers_raw.values()) if isinstance(peers_raw, dict) else peers_raw
 
+    magic_dns_suffix = ts_status.get("MagicDNSSuffix", "ts.net")
+    log.info(f"Tailnet MagicDNS suffix: {magic_dns_suffix}")
+
     ts_ip = ""
     self_ips = ts_status.get("Self", {}).get("TailscaleIPs", [])
     for ip in self_ips:
@@ -104,7 +107,7 @@ def run_tailscale_module(logger=None, force=True, dry_run=False):
             log.warn(f"Ping failed: {host} ({ip})")
 
         # DNS resolution via doggo using full MagicDNS FQDN from status JSON
-        test_fqdn = fqdn or f"{host}.ts.net"
+        test_fqdn = fqdn or f"{host}.{magic_dns_suffix}"
         try:
             out = subprocess.run([doggo_bin, "query", test_fqdn], capture_output=True, text=True).stdout.strip()
             if out:
