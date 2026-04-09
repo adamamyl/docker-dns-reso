@@ -7,7 +7,7 @@ Resolves `*.internal` hostnames from running Docker containers, with Quad9 DoT f
 
 ## Repo layout
 
-```
+```text
 docker-dns-updater.py   Main updater script (run manually or via cron/systemd)
 install.py              Interactive installer (macOS + Linux)
 dnsmasq/                dnsmasq config fragments
@@ -68,6 +68,7 @@ Config lives in `pyproject.toml` at repo root.
 ## Git workflow
 
 Follows global conventions (see `~/.claude/CLAUDE.md`):
+
 - Branch from `main`, never commit directly
 - Conventional commits: `feat(scope):` / `fix(scope):` / `chore:`
 - PRs to merge; pre-commit hooks enforce ruff, mypy, bandit, gitleaks
