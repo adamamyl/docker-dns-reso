@@ -26,7 +26,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from modules import docker_dns, mdns, openvpn, quad9, resolver
+from modules import arp, docker_dns, mdns, openvpn, quad9, resolver
 from modules import logger as logmod
 from modules.types import CheckResult, Status
 
@@ -53,6 +53,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip", default="", metavar="MODULE,...", help="Comma-separated module names to skip (e.g. --skip docker_dns)"
     )
+    parser.add_argument("--arp-only", action="store_true", help="Run only the ARP/reachability check")
     return parser.parse_args()
 
 
@@ -114,8 +115,11 @@ def main() -> None:
     run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
     log = logmod.configure_logger(quiet=False, verbose=args.verbose, debug=args.debug)
     skip: set[str] = set(filter(None, args.skip.split(",")))
+    if args.arp_only:
+        skip = {"resolver", "mdns", "quad9", "openvpn", "docker_dns"}
 
     checks: list[tuple[str, Callable[[], CheckResult]]] = [
+        ("arp", lambda: arp.run_checks(log=log, dry_run=args.dry_run)),
         ("resolver", lambda: resolver.run_checks(log=log, dry_run=args.dry_run)),
         ("mdns", lambda: mdns.run_checks(log=log, dry_run=args.dry_run)),
         ("quad9", lambda: quad9.run_checks(log=log, dry_run=args.dry_run)),
