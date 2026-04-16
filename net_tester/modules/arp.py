@@ -261,10 +261,10 @@ def _check_reachability(*, log: Logger, dry_run: bool) -> dict[str, Any]:
     gateway = _get_default_gateway()
     same_subnet_hosts = _get_same_subnet_hosts_from_arp()
 
-    gateway_reachable = _tcp_probe(gateway, log=log) if gateway else None
+    gateway_reachable = _probe_host(gateway, log=log) if gateway else None
     same_subnet_results: dict[str, bool] = {}
     for host in same_subnet_hosts[:5]:  # limit probes
-        same_subnet_results[host] = _tcp_probe(host, log=log)
+        same_subnet_results[host] = _probe_host(host, log=log)
 
     same_subnet_reachable = any(same_subnet_results.values()) if same_subnet_results else None
     l2_broken = gateway_reachable is True and same_subnet_reachable is False and bool(same_subnet_results)
@@ -317,8 +317,28 @@ def _get_same_subnet_hosts_from_arp() -> list[str]:
         return []
 
 
-def _tcp_probe(host: str, *, log: Logger) -> bool:
-    """Try TCP connect to host on common ports; return True if any succeed."""
+def _probe_host(host: str, *, log: Logger) -> bool:
+    """
+    Probe a host for reachability: ICMP ping first, then TCP on common ports.
+
+    ICMP is tried first because most LAN devices respond to ping regardless of
+    whether they have any listening TCP services (e.g. another laptop that is
+    up but has no open ports).  TCP is a fallback for hosts that block ICMP.
+    """
+    # ICMP ping — 1 packet, 2 s timeout
+    try:
+        result = run_cmd(
+            ["ping", "-c", "1", "-W", "2000", host],
+            dry_run=False,
+            check=False,
+        )
+        if result.returncode == 0:
+            log.debug(f"ICMP ping {host} succeeded")
+            return True
+    except Exception:
+        pass
+
+    # TCP fallback
     for port in _PROBE_PORTS:
         try:
             with socket.create_connection((host, port), timeout=_TCP_TIMEOUT):
@@ -326,7 +346,8 @@ def _tcp_probe(host: str, *, log: Logger) -> bool:
                 return True
         except OSError:
             continue
-    log.debug(f"TCP probe {host} failed on all ports {_PROBE_PORTS}")
+
+    log.debug(f"All probes failed for {host}")
     return False
 
 
